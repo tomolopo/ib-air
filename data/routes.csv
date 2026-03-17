@@ -1,0 +1,11 @@
+airline_iata,origin_iata,destination_iata,duration_minutes
+QR,LOS,DOH,420
+QR,DOH,LHR,420
+BA,LHR,CDG,75
+AF,CDG,FRA,90
+LH,FRA,AMS,60
+KL,AMS,LHR,70
+EK,LOS,DXB,480
+EK,DXB,LHR,420
+TK,LOS,IST,390
+TK,IST,LHR,240

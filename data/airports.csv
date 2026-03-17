@@ -1,0 +1,44 @@
+iata_code,name,city,country,latitude,longitude
+LOS,Murtala Muhammed Intl,Lagos,Nigeria,6.5774,3.3212
+ABV,Nnamdi Azikiwe Intl,Abuja,Nigeria,9.0068,7.2632
+PHC,Port Harcourt Intl,Port Harcourt,Nigeria,5.0155,6.9496
+KAN,Mallam Aminu Kano Intl,Kano,Nigeria,12.0476,8.5246
+ENU,Akanu Ibiam Intl,Enugu,Nigeria,6.4743,7.5619
+IBD,Ibadan Airport,Ibadan,Nigeria,7.3625,3.9783
+ILR,Ilorin Intl,Ilorin,Nigeria,8.4402,4.4939
+JOS,Yakubu Gowon Airport,Jos,Nigeria,9.6398,8.8690
+KAD,Kaduna Airport,Kaduna,Nigeria,10.6960,7.3201
+MIU,Maiduguri Intl,Maiduguri,Nigeria,11.8553,13.0809
+YOL,Yola Airport,Yola,Nigeria,9.2576,12.4304
+SKO,Sadiq Abubakar III Intl,Sokoto,Nigeria,12.9163,5.2072
+AKR,Akure Airport,Akure,Nigeria,7.2467,5.3010
+BNI,Benin Airport,Benin City,Nigeria,6.3161,5.5995
+CBQ,Margaret Ekpo Intl,Calabar,Nigeria,4.9760,8.3472
+QOW,Sam Mbakwe Airport,Owerri,Nigeria,5.4271,7.2060
+CAI,Cairo Intl,Cairo,Egypt,30.1219,31.4056
+NBO,Jomo Kenyatta Intl,Nairobi,Kenya,-1.3192,36.9278
+ADD,Bole Intl,Addis Ababa,Ethiopia,8.9779,38.7993
+JNB,OR Tambo Intl,Johannesburg,South Africa,-26.1337,28.2420
+CPT,Cape Town Intl,Cape Town,South Africa,-33.9696,18.5972
+ACC,Kotoka Intl,Accra,Ghana,5.6052,-0.1668
+DSS,Blaise Diagne Intl,Dakar,Senegal,14.6700,-17.0733
+CMN,Mohammed V Intl,Casablanca,Morocco,33.3675,-7.5899
+ALG,Houari Boumediene Intl,Algiers,Algeria,36.6910,3.2154
+LHR,Heathrow,London,UK,51.4700,-0.4543
+LGW,Gatwick,London,UK,51.1537,-0.1821
+CDG,Charles de Gaulle,Paris,France,49.0097,2.5479
+ORY,Orly,Paris,France,48.7262,2.3652
+FRA,Frankfurt Airport,Frankfurt,Germany,50.0379,8.5622
+MUC,Franz Josef Strauss,Munich,Germany,48.3538,11.7861
+AMS,Schiphol,Amsterdam,Netherlands,52.3105,4.7683
+MAD,Adolfo Suarez Madrid,Madrid,Spain,40.4983,-3.5676
+BCN,Barcelona El Prat,Barcelona,Spain,41.2974,2.0833
+FCO,Leonardo da Vinci Rome,Rome,Italy,41.8003,12.2389
+ZRH,Zurich Airport,Zurich,Switzerland,47.4581,8.5555
+VIE,Vienna Intl,Vienna,Austria,48.1103,16.5697
+BRU,Brussels Airport,Brussels,Belgium,50.9010,4.4844
+CPH,Copenhagen Airport,Copenhagen,Denmark,55.6180,12.6560
+DXB,Dubai Intl,Dubai,UAE,25.2532,55.3657
+DOH,Hamad Intl,Doha,Qatar,25.2731,51.6080
+IST,Istanbul Airport,Istanbul,Turkey,41.2753,28.7519
+JFK,John F Kennedy Intl,New York,USA,40.6413,-73.7781
