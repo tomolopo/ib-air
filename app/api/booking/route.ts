@@ -50,13 +50,13 @@ export async function POST(req: NextRequest) {
     // CREATE BOOKING
     // =======================
 
-    const [booking] = await db
-      .insert(bookings)
-      .values({
-        pnr,
-        status: "PENDING"
-      })
-      .returning()
+    const totalAmount = flightIds.length * 500 // simple pricing
+
+const [booking] = await db.insert(bookings).values({
+  pnr,
+  status: "PENDING",
+  totalAmount: totalAmount
+}).returning()
 
     // =======================
     // INSERT SEGMENTS
