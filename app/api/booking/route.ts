@@ -97,12 +97,12 @@ export async function POST(req: NextRequest) {
       bookingId: booking.id
     })
 
-  } catch (error) {
-    console.error(error)
+  } catch (error: any) {
+  console.error("BOOKING ERROR:", error)
 
-    return NextResponse.json(
-      { error: "Booking failed" },
-      { status: 500 }
-    )
-  }
+  return NextResponse.json(
+    { error: error.message || "Booking failed" },
+    { status: 500 }
+  )
+}
 }
