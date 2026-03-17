@@ -116,7 +116,7 @@ export const bookings = pgTable("bookings", {
   id: uuid("id").defaultRandom().primaryKey(),
   pnr: varchar("pnr", { length: 10 }).notNull(),
   status: varchar("status", { length: 20 }).default("PENDING"),
-  totalAmount: numeric("total_amount").default("0"),
+  totalAmount: integer("total_amount").default(0),
   createdAt: timestamp("created_at").defaultNow()
 })
 
