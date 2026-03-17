@@ -118,6 +118,8 @@ export const bookings = pgTable("bookings", {
   status: varchar("status", { length: 20 }).default("PENDING"),
   paymentStatus: varchar("payment_status", { length: 20 }).default("PENDING"),
   totalAmount: integer("total_amount"),
+  seat: varchar("seat", { length: 10 }),
+  passengerName: varchar("passenger_name", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow()
 })
 
