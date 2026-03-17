@@ -6,30 +6,48 @@ import {
   passengers,
   bookingPassengers
 } from "@/db/schema"
+import { eq } from "drizzle-orm"
 
-// =======================
-// 🧠 PNR GENERATOR
-// =======================
-
-function generatePNR() {
+// ==============================
+// 🔐 UNIQUE PNR GENERATOR
+// ==============================
+async function generateUniquePNR(): Promise<string> {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-  let pnr = ""
-  for (let i = 0; i < 6; i++) {
-    pnr += chars[Math.floor(Math.random() * chars.length)]
+
+  while (true) {
+    let pnr = ""
+
+    for (let i = 0; i < 6; i++) {
+      pnr += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+
+    const existing = await db.query.bookings.findFirst({
+      where: (b, { eq }) => eq(b.pnr, pnr)
+    })
+
+    if (!existing) return pnr
   }
-  return pnr
 }
 
-// =======================
-// 🎟️ CREATE BOOKING
-// =======================
+// ==============================
+// 🧪 TEST ENDPOINT (OPTIONAL)
+// ==============================
+export async function GET() {
+  return NextResponse.json({ message: "Booking API working" })
+}
 
+// ==============================
+// ✈️ CREATE BOOKING
+// ==============================
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
     const { flights: flightIds, passengers: pax } = body
 
+    // ==============================
+    // VALIDATION
+    // ==============================
     if (!flightIds || flightIds.length === 0) {
       return NextResponse.json(
         { error: "No flights selected" },
@@ -44,24 +62,31 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const pnr = generatePNR()
+    // ==============================
+    // GENERATE PNR
+    // ==============================
+    const pnr = await generateUniquePNR()
 
-    // =======================
+    // ==============================
+    // CALCULATE PRICE
+    // ==============================
+    const totalAmount = flightIds.length * 500
+
+    // ==============================
     // CREATE BOOKING
-    // =======================
+    // ==============================
+    const [booking] = await db
+      .insert(bookings)
+      .values({
+        pnr,
+        status: "PENDING",
+        totalAmount
+      })
+      .returning()
 
-    const totalAmount = flightIds.length * 500 // simple pricing
-
-const [booking] = await db.insert(bookings).values({
-  pnr,
-  status: "PENDING",
-  totalAmount: totalAmount
-}).returning()
-
-    // =======================
+    // ==============================
     // INSERT SEGMENTS
-    // =======================
-
+    // ==============================
     const segments = flightIds.map((flightId: string, index: number) => ({
       bookingId: booking.id,
       flightId,
@@ -70,10 +95,9 @@ const [booking] = await db.insert(bookings).values({
 
     await db.insert(bookingSegments).values(segments)
 
-    // =======================
+    // ==============================
     // INSERT PASSENGERS
-    // =======================
-
+    // ==============================
     for (const p of pax) {
       const [passenger] = await db
         .insert(passengers)
@@ -91,18 +115,22 @@ const [booking] = await db.insert(bookings).values({
       })
     }
 
+    // ==============================
+    // RESPONSE
+    // ==============================
     return NextResponse.json({
       success: true,
       pnr,
-      bookingId: booking.id
+      bookingId: booking.id,
+      totalAmount
     })
 
   } catch (error: any) {
-  console.error("BOOKING ERROR:", error)
+    console.error("BOOKING ERROR:", error)
 
-  return NextResponse.json(
-    { error: error.message || "Booking failed" },
-    { status: 500 }
-  )
-}
+    return NextResponse.json(
+      { error: error.message || "Booking failed" },
+      { status: 500 }
+    )
+  }
 }
