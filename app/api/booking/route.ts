@@ -3,7 +3,7 @@ import { db } from "@/db"
 import { bookings, bookingSegments, passengers } from "@/db/schema"
 
 // =========================
-// GENERATE UNIQUE PNR
+// GENERATE PNR
 // =========================
 async function generateUniquePNR(): Promise<string> {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -42,7 +42,6 @@ export async function POST(req: NextRequest) {
     // 🔥 GENERATE PNR
     const pnr = await generateUniquePNR()
 
-    // 💰 SIMPLE PRICING
     const totalAmount = flightIds.length * 500
 
     // =========================
@@ -58,7 +57,7 @@ export async function POST(req: NextRequest) {
       .returning()
 
     // =========================
-    // INSERT SEGMENTS (MULTI-LEG)
+    // INSERT SEGMENTS
     // =========================
     const segments = flightIds.map((flightId: string, index: number) => ({
       bookingId: booking.id,
@@ -90,7 +89,7 @@ export async function POST(req: NextRequest) {
       totalAmount
     })
   } catch (error: any) {
-    console.error("BOOKING ERROR:", error)
+    console.error(error)
 
     return NextResponse.json(
       { error: error.message || "Booking failed" },

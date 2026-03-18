@@ -1,151 +1,120 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { flights, airports, airlines } from "@/db/schema"
-import { eq, and, or, ilike, gt } from "drizzle-orm"
-import { alias } from "drizzle-orm/pg-core"
-import { sql } from "drizzle-orm"
+import { flights, routes, airports, airlines } from "@/db/schema"
+import { eq, and } from "drizzle-orm"
 
-export async function GET(req: NextRequest) {
+export async function POST(req: NextRequest) {
   try {
-    const { searchParams } = new URL(req.url)
+    const body = await req.json()
 
-    const from = searchParams.get("from")
-    const to = searchParams.get("to")
-    const date = searchParams.get("date")
+    const {
+      tripType = "one-way",
+      from,
+      to,
+      departureDate,
+      returnDate
+    } = body
 
-    if (!from || !to || !date) {
+    // =========================
+    // VALIDATION
+    // =========================
+    if (!from || !to || !departureDate) {
       return NextResponse.json(
-        { error: "Missing params" },
+        { error: "Missing required fields" },
+        { status: 400 }
+      )
+    }
+
+    if (tripType === "round-trip" && !returnDate) {
+      return NextResponse.json(
+        { error: "Return date required for round-trip" },
         { status: 400 }
       )
     }
 
     // =========================
-    // 🔍 FIND AIRPORTS
+    // HELPER FUNCTION
     // =========================
+    const getFlights = async (
+      originCode: string,
+      destinationCode: string,
+      date: string
+    ) => {
+      const origin = await db.query.airports.findFirst({
+        where: (a: any, { eq }: any) => eq(a.iataCode, originCode)
+      })
 
-    const originAirports = await db
-      .select()
-      .from(airports)
-      .where(
-        or(
-          ilike(airports.city, `%${from}%`),
-          eq(airports.iataCode, from.toUpperCase())
-        )
+      const destination = await db.query.airports.findFirst({
+        where: (a: any, { eq }: any) => eq(a.iataCode, destinationCode)
+      })
+
+      if (!origin || !destination) return []
+
+      const route = await db.query.routes.findFirst({
+        where: (r: any, { eq, and }: any) =>
+          and(eq(r.originId, origin.id), eq(r.destinationId, destination.id))
+      })
+
+      if (!route) return []
+
+      const results = await db
+        .select()
+        .from(flights)
+        .where(eq(flights.routeId, route.id))
+
+      return Promise.all(
+        results.map(async (f: any) => {
+          const airline = await db
+            .select()
+            .from(airlines)
+            .where(eq(airlines.id, f.airlineId))
+            .then(res => res[0])
+
+          return {
+            id: f.id,
+            flightNumber: f.flightNumber,
+            departureTime: f.departureTime,
+            arrivalTime: f.arrivalTime,
+            airline: airline?.name,
+            from: origin.city,
+            to: destination.city
+          }
+        })
       )
+    }
 
-    const destinationAirports = await db
-      .select()
-      .from(airports)
-      .where(
-        or(
-          ilike(airports.city, `%${to}%`),
-          eq(airports.iataCode, to.toUpperCase())
-        )
-      )
+    // =========================
+    // ONE WAY
+    // =========================
+    if (tripType === "one-way") {
+      const outbound = await getFlights(from, to, departureDate)
 
-    const originIds = originAirports.map(a => a.id)
-    const destinationIds = destinationAirports.map(a => a.id)
-
-    if (originIds.length === 0 || destinationIds.length === 0) {
       return NextResponse.json({
         success: true,
-        data: { direct: [], connecting: [] }
+        tripType,
+        data: { outbound }
       })
     }
 
     // =========================
-    // ✈️ DIRECT FLIGHTS
+    // ROUND TRIP
     // =========================
-
-    const departureAirport = alias(airports, "departure_airport")
-    const arrivalAirport = alias(airports, "arrival_airport")
-
-    const directFlights = await db
-      .select({
-        type: sql<string>`'direct'`,
-        flightNumber: flights.flightNumber,
-        departureTime: flights.departureTime,
-        arrivalTime: flights.arrivalTime,
-        airline: airlines.name,
-        from: departureAirport.city,
-        to: arrivalAirport.city
-      })
-      .from(flights)
-      .innerJoin(airlines, eq(flights.airlineId, airlines.id))
-      .innerJoin(
-        departureAirport,
-        eq(flights.departureAirportId, departureAirport.id)
-      )
-      .innerJoin(
-        arrivalAirport,
-        eq(flights.arrivalAirportId, arrivalAirport.id)
-      )
-      .where(
-        and(
-          eq(flights.flightDate, new Date(date)),
-          or(...originIds.map(id => eq(flights.departureAirportId, id))),
-          or(...destinationIds.map(id => eq(flights.arrivalAirportId, id)))
-        )
-      )
-
-    // =========================
-    // 🔥 MULTI-LEG (1 STOP)
-    // =========================
-
-    const f1 = alias(flights, "f1")
-    const f2 = alias(flights, "f2")
-
-    const multiLegFlights = await db
-      .select({
-        type: sql<string>`'connecting'`,
-
-        leg1FlightNumber: f1.flightNumber,
-        leg1Departure: f1.departureTime,
-        leg1Arrival: f1.arrivalTime,
-
-        leg2FlightNumber: f2.flightNumber,
-        leg2Departure: f2.departureTime,
-        leg2Arrival: f2.arrivalTime
-      })
-      .from(f1)
-      .innerJoin(
-        f2,
-        eq(f1.arrivalAirportId, f2.departureAirportId)
-      )
-      .where(
-        and(
-          eq(f1.flightDate, new Date(date)),
-          eq(f2.flightDate, new Date(date)),
-
-          or(...originIds.map(id => eq(f1.departureAirportId, id))),
-          or(...destinationIds.map(id => eq(f2.arrivalAirportId, id))),
-
-          // ✅ Layover logic (FIXED)
-          gt(f2.departureTime, f1.arrivalTime),
-          sql`${f2.departureTime} <= ${f1.arrivalTime} + interval '6 hours'`
-        )
-      )
-
-    // =========================
-    // 🎯 RESPONSE
-    // =========================
+    const outbound = await getFlights(from, to, departureDate)
+    const inbound = await getFlights(to, from, returnDate)
 
     return NextResponse.json({
       success: true,
-      directCount: directFlights.length,
-      connectingCount: multiLegFlights.length,
+      tripType,
       data: {
-        direct: directFlights,
-        connecting: multiLegFlights
+        outbound,
+        inbound
       }
     })
-
-  } catch (error) {
+  } catch (error: any) {
     console.error(error)
 
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: error.message || "Search failed" },
       { status: 500 }
     )
   }
