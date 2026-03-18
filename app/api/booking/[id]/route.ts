@@ -12,55 +12,44 @@ import {
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
-// =========================
-// GET → TICKET PDF
-// =========================
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ id: string }> } // ✅ FIXED FOR NEXT 16
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // ✅ IMPORTANT: await params
+    // ✅ FIX 1: Next.js 16 params
     const { id: bookingId } = await context.params
 
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type")
 
-    console.log("BOOKING ID:", bookingId)
-
     if (!bookingId) {
-      return NextResponse.json(
-        { error: "Missing booking ID" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "Missing booking ID" }, { status: 400 })
     }
 
     // =========================
     // GET BOOKING
     // =========================
-    const bookingRes = await db
-      .select()
-      .from(bookings)
-      .where(eq(bookings.id, bookingId))
-
-    const booking = bookingRes[0]
+    const booking = (
+      await db
+        .select()
+        .from(bookings)
+        .where(eq(bookings.id, bookingId))
+    )[0]
 
     if (!booking) {
-      return NextResponse.json(
-        { error: "Booking not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Booking not found" }, { status: 404 })
     }
 
     // =========================
     // GET SEGMENT
     // =========================
-    const segmentRes = await db
-      .select()
-      .from(bookingSegments)
-      .where(eq(bookingSegments.bookingId, bookingId))
-
-    const segment = segmentRes[0]
+    const segment = (
+      await db
+        .select()
+        .from(bookingSegments)
+        .where(eq(bookingSegments.bookingId, bookingId))
+    )[0]
 
     if (!segment) {
       return NextResponse.json(
@@ -72,42 +61,39 @@ export async function GET(
     // =========================
     // GET FLIGHT
     // =========================
-    const flightRes = await db
-      .select()
-      .from(flights)
-      .where(eq(flights.id, segment.flightId))
-
-    const flight = flightRes[0]
+    const flight = (
+      await db
+        .select()
+        .from(flights)
+        .where(eq(flights.id, segment.flightId))
+    )[0]
 
     if (!flight) {
-      return NextResponse.json(
-        { error: "Flight not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Flight not found" }, { status: 404 })
     }
 
     // =========================
     // GET ROUTE
     // =========================
-    const routeRes = await db
-      .select()
-      .from(routes)
-      .where(eq(routes.id, flight.routeId))
-
-    const route = routeRes[0]
+    const route = (
+      await db
+        .select()
+        .from(routes)
+        .where(eq(routes.id, flight.routeId))
+    )[0]
 
     if (!route) {
-      return NextResponse.json(
-        { error: "Route not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Route not found" }, { status: 404 })
     }
 
     // =========================
-    // GET AIRPORTS
+    // AIRPORTS
     // =========================
     const origin = (
-      await db.select().from(airports).where(eq(airports.id, route.originId))
+      await db
+        .select()
+        .from(airports)
+        .where(eq(airports.id, route.originId))
     )[0]
 
     const destination = (
@@ -125,7 +111,7 @@ export async function GET(
     }
 
     // =========================
-    // GET AIRLINE
+    // AIRLINE
     // =========================
     const airline = (
       await db
@@ -142,12 +128,18 @@ export async function GET(
     }
 
     // =========================
-    // GENERATE PDF
+    // PDF GENERATION (FIXED)
     // =========================
     if (type === "ticket") {
-      const doc = new PDFDocument({ size: "A4", margin: 50 })
-      const chunks: Uint8Array[] = []
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 50
+      })
 
+      // ✅ FIX 2: Prevent font crash on Vercel
+      doc.font("Helvetica")
+
+      const chunks: Uint8Array[] = []
       doc.on("data", (chunk) => chunks.push(chunk))
 
       doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
@@ -155,11 +147,9 @@ export async function GET(
       })
 
       doc.moveDown()
-
       doc.fontSize(12).text(`PNR: ${booking.pnr}`)
 
       doc.moveDown()
-
       doc.fontSize(14).text("Flight Details", { underline: true })
 
       doc.fontSize(12)
@@ -170,7 +160,6 @@ export async function GET(
       doc.text(`Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`)
 
       doc.moveDown()
-
       doc.text(`Seat: ${booking.seat || "Not assigned"}`)
       doc.text(`Status: ${booking.status}`)
 
@@ -184,8 +173,8 @@ export async function GET(
         })
 
         const qrImage = await QRCode.toDataURL(qrData)
-        const base64Data = qrImage.replace(/^data:image\/png;base64,/, "")
-        const qrBuffer = Buffer.from(base64Data, "base64")
+        const base64 = qrImage.replace(/^data:image\/png;base64,/, "")
+        const qrBuffer = Buffer.from(base64, "base64")
 
         doc.image(qrBuffer, { fit: [150, 150], align: "center" })
       } catch (e) {
@@ -198,7 +187,6 @@ export async function GET(
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
-      // ✅ CRITICAL FIX (Next.js body type)
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
