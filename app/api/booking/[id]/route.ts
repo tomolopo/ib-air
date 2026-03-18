@@ -10,7 +10,7 @@ import {
   airports,
   airlines
 } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 
 // =========================
 // GET → TICKET PDF
@@ -22,15 +22,19 @@ export async function GET(req: Request, context: any) {
 
     const bookingId = context.params.id
 
+    console.log("Incoming bookingId:", bookingId)
+
     // =========================
-    // GET BOOKING (FIXED)
+    // GET BOOKING (UUID SAFE)
     // =========================
     const bookingRes = await db
       .select()
       .from(bookings)
-      .where(eq(bookings.id, bookingId))
+      .where(sql`${bookings.id} = ${bookingId}`)
 
     const booking = bookingRes[0]
+
+    console.log("Booking result:", booking)
 
     if (!booking) {
       return NextResponse.json(
@@ -40,12 +44,12 @@ export async function GET(req: Request, context: any) {
     }
 
     // =========================
-    // GET SEGMENT (FIXED)
+    // GET SEGMENT (UUID SAFE)
     // =========================
     const segmentRes = await db
       .select()
       .from(bookingSegments)
-      .where(eq(bookingSegments.bookingId, bookingId))
+      .where(sql`${bookingSegments.bookingId} = ${bookingId}`)
 
     const segment = segmentRes[0]
 
@@ -171,9 +175,7 @@ export async function GET(req: Request, context: any) {
 
       doc.moveDown()
 
-      // =========================
-      // QR CODE (SAFE)
-      // =========================
+      // QR CODE
       let qrBuffer: Buffer | null = null
 
       try {
@@ -190,10 +192,7 @@ export async function GET(req: Request, context: any) {
       }
 
       if (qrBuffer) {
-        doc.image(qrBuffer, {
-          fit: [150, 150],
-          align: "center"
-        })
+        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
       }
 
       doc.moveDown()
@@ -205,7 +204,6 @@ export async function GET(req: Request, context: any) {
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
-      // ✅ FIXED FOR NEXT.JS (CRITICAL)
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
