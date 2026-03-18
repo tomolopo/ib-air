@@ -12,23 +12,25 @@ import {
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
+// ✅ IMPORTANT: params MUST be Promise in Next 16
 type Context = {
-  params: {
+  params: Promise<{
     id: string
-  }
+  }>
 }
 
 // =========================
 // GET → DOWNLOAD TICKET PDF
 // =========================
 export async function GET(req: NextRequest, context: Context) {
-  const bookingId = context.params.id
+  // ✅ CRITICAL FIX
+  const { id: bookingId } = await context.params
 
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
 
   // =========================
-  // FETCH DATA
+  // FETCH BOOKING
   // =========================
   const booking = await db.query.bookings.findFirst({
     where: (b: any, { eq }: any) => eq(b.id, bookingId)
@@ -38,6 +40,9 @@ export async function GET(req: NextRequest, context: Context) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 })
   }
 
+  // =========================
+  // FETCH FIRST SEGMENT
+  // =========================
   const segment = await db.query.bookingSegments.findFirst({
     where: (s: any, { eq }: any) => eq(s.bookingId, bookingId)
   })
@@ -49,6 +54,9 @@ export async function GET(req: NextRequest, context: Context) {
     )
   }
 
+  // =========================
+  // FETCH FLIGHT
+  // =========================
   const flight = await db
     .select()
     .from(flights)
@@ -59,6 +67,9 @@ export async function GET(req: NextRequest, context: Context) {
     return NextResponse.json({ error: "Flight not found" }, { status: 404 })
   }
 
+  // =========================
+  // FETCH ROUTE + AIRPORTS
+  // =========================
   const route = await db
     .select()
     .from(routes)
@@ -77,6 +88,9 @@ export async function GET(req: NextRequest, context: Context) {
     .where(eq(airports.id, route.destinationId))
     .then(res => res[0])
 
+  // =========================
+  // FETCH AIRLINE
+  // =========================
   const airline = await db
     .select()
     .from(airlines)
@@ -107,7 +121,7 @@ export async function GET(req: NextRequest, context: Context) {
 
     doc.moveDown(2)
 
-    // PASSENGER + PNR
+    // PASSENGER
     doc.fontSize(12)
     doc.text(`PNR: ${booking.pnr}`)
     doc.text(`Passenger: ${booking.passengerName || "Guest"}`)
@@ -115,9 +129,7 @@ export async function GET(req: NextRequest, context: Context) {
     doc.moveDown()
 
     // ROUTE BOX
-    doc
-      .rect(40, doc.y, 500, 80)
-      .stroke()
+    doc.rect(40, doc.y, 500, 80).stroke()
 
     doc.moveDown()
 
@@ -137,7 +149,6 @@ export async function GET(req: NextRequest, context: Context) {
     doc.moveDown()
 
     // SEAT + STATUS
-    doc.fontSize(12)
     doc.text(`Seat: ${booking.seat || "Not assigned"}`)
     doc.text(`Status: ${booking.status}`)
 
@@ -152,8 +163,8 @@ export async function GET(req: NextRequest, context: Context) {
     })
 
     const qrImage = await QRCode.toDataURL(qrData)
-    const base64Data = qrImage.replace(/^data:image\/png;base64,/, "")
-    const qrBuffer = Buffer.from(base64Data, "base64")
+    const base64 = qrImage.split(",")[1]
+    const qrBuffer = Buffer.from(base64, "base64")
 
     doc.image(qrBuffer, {
       fit: [120, 120],
@@ -186,7 +197,8 @@ export async function GET(req: NextRequest, context: Context) {
 // POST → SAVE SEAT
 // =========================
 export async function POST(req: NextRequest, context: Context) {
-  const bookingId = context.params.id
+  // ✅ CRITICAL FIX
+  const { id: bookingId } = await context.params
 
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
