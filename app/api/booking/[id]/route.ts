@@ -23,11 +23,14 @@ export async function GET(req: Request, context: any) {
     const bookingId = context.params.id
 
     // =========================
-    // GET BOOKING
+    // GET BOOKING (FIXED)
     // =========================
-    const booking = await db.query.bookings.findFirst({
-      where: (b: any, { eq }: any) => eq(b.id, bookingId)
-    })
+    const bookingRes = await db
+      .select()
+      .from(bookings)
+      .where(eq(bookings.id, bookingId))
+
+    const booking = bookingRes[0]
 
     if (!booking) {
       return NextResponse.json(
@@ -37,11 +40,14 @@ export async function GET(req: Request, context: any) {
     }
 
     // =========================
-    // GET SEGMENT
+    // GET SEGMENT (FIXED)
     // =========================
-    const segment = await db.query.bookingSegments.findFirst({
-      where: (s: any, { eq }: any) => eq(s.bookingId, bookingId)
-    })
+    const segmentRes = await db
+      .select()
+      .from(bookingSegments)
+      .where(eq(bookingSegments.bookingId, bookingId))
+
+    const segment = segmentRes[0]
 
     if (!segment) {
       return NextResponse.json(
@@ -165,7 +171,9 @@ export async function GET(req: Request, context: any) {
 
       doc.moveDown()
 
+      // =========================
       // QR CODE (SAFE)
+      // =========================
       let qrBuffer: Buffer | null = null
 
       try {
@@ -182,7 +190,10 @@ export async function GET(req: Request, context: any) {
       }
 
       if (qrBuffer) {
-        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
+        doc.image(qrBuffer, {
+          fit: [150, 150],
+          align: "center"
+        })
       }
 
       doc.moveDown()
@@ -194,7 +205,7 @@ export async function GET(req: Request, context: any) {
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
-      // ✅ FIXED FOR NEXT.JS (VERY IMPORTANT)
+      // ✅ FIXED FOR NEXT.JS (CRITICAL)
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
