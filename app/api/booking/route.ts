@@ -32,6 +32,9 @@ export async function POST(req: NextRequest) {
 
     const { flights: flightIds, passengers: pax } = body
 
+    // =========================
+    // VALIDATION
+    // =========================
     if (!flightIds || flightIds.length === 0) {
       return NextResponse.json(
         { error: "No flights selected" },
@@ -39,9 +42,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // 🔥 GENERATE PNR
+    if (!pax || pax.length === 0) {
+      return NextResponse.json(
+        { error: "Passenger details required" },
+        { status: 400 }
+      )
+    }
+
+    // =========================
+    // GENERATE PNR
+    // =========================
     const pnr = await generateUniquePNR()
 
+    // =========================
+    // SIMPLE PRICING
+    // =========================
     const totalAmount = flightIds.length * 500
 
     // =========================
@@ -52,17 +67,18 @@ export async function POST(req: NextRequest) {
       .values({
         pnr,
         status: "PENDING",
-        totalAmount
+        totalAmount,
+        passengerName: `${pax[0].firstName} ${pax[0].lastName}` // ✅ FIX
       })
       .returning()
 
     // =========================
-    // INSERT SEGMENTS
+    // INSERT SEGMENTS (FIXED)
     // =========================
     const segments = flightIds.map((flightId: string, index: number) => ({
       bookingId: booking.id,
       flightId,
-      legOrder: index + 1
+      segmentOrder: index + 1 // ✅ CRITICAL FIX
     }))
 
     await db.insert(bookingSegments).values(segments)
@@ -70,26 +86,30 @@ export async function POST(req: NextRequest) {
     // =========================
     // INSERT PASSENGERS
     // =========================
-    if (pax && pax.length > 0) {
-      const passengerRows = pax.map((p: any) => ({
-        bookingId: booking.id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        email: p.email,
-        phone: p.phone
-      }))
+    const passengerRows = pax.map((p: any) => ({
+      bookingId: booking.id,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      email: p.email,
+      phone: p.phone
+    }))
 
-      await db.insert(passengers).values(passengerRows)
-    }
+    await db.insert(passengers).values(passengerRows)
 
+    // =========================
+    // RESPONSE
+    // =========================
     return NextResponse.json({
       success: true,
       pnr,
       bookingId: booking.id,
-      totalAmount
+      totalAmount,
+      flightsCount: flightIds.length,
+      passengersCount: pax.length
     })
+
   } catch (error: any) {
-    console.error(error)
+    console.error("BOOKING ERROR:", error)
 
     return NextResponse.json(
       { error: error.message || "Booking failed" },
