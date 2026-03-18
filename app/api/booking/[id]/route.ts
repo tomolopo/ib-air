@@ -16,13 +16,14 @@ import { eq } from "drizzle-orm"
 // GET → TICKET PDF
 // =========================
 export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest, // ✅ FIX (was Request)
+  context: { params: { id: string } } // ✅ FIX (no destructuring here)
 ) {
+  const { params } = context
+  const bookingId = params.id
+
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
-
-  const bookingId = params.id
 
   // 🔥 GET BOOKING
   const booking = await db.query.bookings.findFirst({
@@ -33,7 +34,7 @@ export async function GET(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 })
   }
 
-  // 🔥 GET FIRST SEGMENT (for now)
+  // 🔥 GET FIRST SEGMENT
   const segment = await db.query.bookingSegments.findFirst({
     where: (s: any, { eq }: any) => eq(s.bookingId, bookingId)
   })
@@ -51,6 +52,10 @@ export async function GET(
     .from(flights)
     .where(eq(flights.id, segment.flightId))
     .then(res => res[0])
+
+  if (!flight) {
+    return NextResponse.json({ error: "Flight not found" }, { status: 404 })
+  }
 
   // 🔥 GET ROUTE
   const route = await db
@@ -88,20 +93,17 @@ export async function GET(
 
     doc.on("data", (chunk: Uint8Array) => chunks.push(chunk))
 
-    // HEADER
     doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
       align: "center"
     })
 
     doc.moveDown()
 
-    // PASSENGER
     doc.fontSize(12)
     doc.text(`PNR: ${booking.pnr}`)
 
     doc.moveDown()
 
-    // ROUTE
     doc.fontSize(14).text("Flight Details", { underline: true })
 
     doc.fontSize(12)
@@ -114,18 +116,14 @@ export async function GET(
 
     doc.moveDown()
 
-    // SEAT
     doc.text(`Seat: ${booking.seat || "Not assigned"}`)
     doc.text(`Status: ${booking.status}`)
 
     doc.moveDown()
 
-    // QR
     const qrData = JSON.stringify({
       pnr: booking.pnr,
-      flight: flight.flightNumber,
-      from: origin.iataCode,
-      to: destination.iataCode
+      flight: flight.flightNumber
     })
 
     const qrImage = await QRCode.toDataURL(qrData)
@@ -158,12 +156,14 @@ export async function GET(
 // =========================
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } } // ✅ FIX
 ) {
+  const { params } = context
+  const bookingId = params.id
+
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
 
-  const bookingId = params.id
   const body = await req.json()
 
   if (type === "seat") {
