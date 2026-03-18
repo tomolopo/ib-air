@@ -12,20 +12,24 @@ import {
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
+type Context = {
+  params: {
+    id: string
+  }
+}
+
 // =========================
-// GET → TICKET PDF
+// GET → DOWNLOAD TICKET PDF
 // =========================
-export async function GET(
-  req: NextRequest, // ✅ FIX (was Request)
-  context: { params: { id: string } } // ✅ FIX (no destructuring here)
-) {
-  const { params } = context
-  const bookingId = params.id
+export async function GET(req: NextRequest, context: Context) {
+  const bookingId = context.params.id
 
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
 
-  // 🔥 GET BOOKING
+  // =========================
+  // FETCH DATA
+  // =========================
   const booking = await db.query.bookings.findFirst({
     where: (b: any, { eq }: any) => eq(b.id, bookingId)
   })
@@ -34,7 +38,6 @@ export async function GET(
     return NextResponse.json({ error: "Booking not found" }, { status: 404 })
   }
 
-  // 🔥 GET FIRST SEGMENT
   const segment = await db.query.bookingSegments.findFirst({
     where: (s: any, { eq }: any) => eq(s.bookingId, bookingId)
   })
@@ -46,7 +49,6 @@ export async function GET(
     )
   }
 
-  // 🔥 GET FLIGHT
   const flight = await db
     .select()
     .from(flights)
@@ -57,14 +59,12 @@ export async function GET(
     return NextResponse.json({ error: "Flight not found" }, { status: 404 })
   }
 
-  // 🔥 GET ROUTE
   const route = await db
     .select()
     .from(routes)
     .where(eq(routes.id, flight.routeId))
     .then(res => res[0])
 
-  // 🔥 GET AIRPORTS
   const origin = await db
     .select()
     .from(airports)
@@ -77,7 +77,6 @@ export async function GET(
     .where(eq(airports.id, route.destinationId))
     .then(res => res[0])
 
-  // 🔥 GET AIRLINE
   const airline = await db
     .select()
     .from(airlines)
@@ -88,53 +87,85 @@ export async function GET(
   // GENERATE PDF
   // =========================
   if (type === "ticket") {
-    const doc = new PDFDocument({ size: "A4", margin: 50 })
+    const doc = new PDFDocument({ size: "A4", margin: 40 })
     const chunks: Uint8Array[] = []
 
     doc.on("data", (chunk: Uint8Array) => chunks.push(chunk))
 
-    doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
-      align: "center"
-    })
+    // HEADER
+    doc
+      .fontSize(22)
+      .fillColor("#1a73e8")
+      .text(`✈️ ${airline.name}`, { align: "center" })
 
     doc.moveDown()
 
+    doc
+      .fontSize(16)
+      .fillColor("#000")
+      .text("BOARDING PASS", { align: "center" })
+
+    doc.moveDown(2)
+
+    // PASSENGER + PNR
     doc.fontSize(12)
     doc.text(`PNR: ${booking.pnr}`)
+    doc.text(`Passenger: ${booking.passengerName || "Guest"}`)
 
     doc.moveDown()
 
-    doc.fontSize(14).text("Flight Details", { underline: true })
+    // ROUTE BOX
+    doc
+      .rect(40, doc.y, 500, 80)
+      .stroke()
+
+    doc.moveDown()
+
+    doc.fontSize(14).text(
+      `${origin.city} (${origin.iataCode}) → ${destination.city} (${destination.iataCode})`
+    )
+
+    doc.moveDown(0.5)
 
     doc.fontSize(12)
-    doc.text(`From: ${origin.city} (${origin.iataCode})`)
-    doc.text(`To: ${destination.city} (${destination.iataCode})`)
     doc.text(`Flight: ${flight.flightNumber}`)
-
-    doc.text(`Departure: ${new Date(flight.departureTime).toLocaleString()}`)
+    doc.text(
+      `Departure: ${new Date(flight.departureTime).toLocaleString()}`
+    )
     doc.text(`Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`)
 
     doc.moveDown()
 
+    // SEAT + STATUS
+    doc.fontSize(12)
     doc.text(`Seat: ${booking.seat || "Not assigned"}`)
     doc.text(`Status: ${booking.status}`)
 
-    doc.moveDown()
+    doc.moveDown(2)
 
+    // QR CODE
     const qrData = JSON.stringify({
       pnr: booking.pnr,
-      flight: flight.flightNumber
+      flight: flight.flightNumber,
+      from: origin.iataCode,
+      to: destination.iataCode
     })
 
     const qrImage = await QRCode.toDataURL(qrData)
     const base64Data = qrImage.replace(/^data:image\/png;base64,/, "")
     const qrBuffer = Buffer.from(base64Data, "base64")
 
-    doc.image(qrBuffer, { fit: [150, 150], align: "center" })
+    doc.image(qrBuffer, {
+      fit: [120, 120],
+      align: "center"
+    })
 
     doc.moveDown()
 
-    doc.text("Thank you for flying ✈️", { align: "center" })
+    doc
+      .fontSize(10)
+      .fillColor("gray")
+      .text("Scan at boarding gate", { align: "center" })
 
     doc.end()
 
@@ -154,12 +185,8 @@ export async function GET(
 // =========================
 // POST → SAVE SEAT
 // =========================
-export async function POST(
-  req: NextRequest,
-  context: { params: { id: string } } // ✅ FIX
-) {
-  const { params } = context
-  const bookingId = params.id
+export async function POST(req: NextRequest, context: Context) {
+  const bookingId = context.params.id
 
   const { searchParams } = new URL(req.url)
   const type = searchParams.get("type")
