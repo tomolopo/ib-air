@@ -1,5 +1,6 @@
 import {
   pgTable,
+  text,
   uuid,
   varchar,
   integer,
@@ -120,6 +121,8 @@ export const bookings = pgTable("bookings", {
   totalAmount: integer("total_amount"),
   seat: varchar("seat", { length: 10 }),
   passengerName: varchar("passenger_name", { length: 100 }),
+   // ✅ NEW FIELD
+  ticketUrl: text("ticket_url"),
   createdAt: timestamp("created_at").defaultNow()
 })
 
