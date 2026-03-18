@@ -10,31 +10,43 @@ import {
   airports,
   airlines
 } from "@/db/schema"
-import { eq, sql } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 
 // =========================
 // GET → TICKET PDF
 // =========================
-export async function GET(req: Request, context: any) {
+export async function GET(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type")
 
-    const bookingId = context.params.id
+    const bookingId = params.id
 
-    console.log("Incoming bookingId:", bookingId)
+    // 🔍 DEBUG (VERY IMPORTANT)
+    console.log("PARAMS:", params)
+    console.log("BOOKING ID:", bookingId)
+
+    if (!bookingId) {
+      return NextResponse.json(
+        { error: "Missing booking ID" },
+        { status: 400 }
+      )
+    }
 
     // =========================
-    // GET BOOKING (UUID SAFE)
+    // GET BOOKING
     // =========================
     const bookingRes = await db
       .select()
       .from(bookings)
-      .where(sql`${bookings.id} = ${bookingId}`)
+      .where(eq(bookings.id, bookingId))
 
     const booking = bookingRes[0]
 
-    console.log("Booking result:", booking)
+    console.log("BOOKING RESULT:", booking)
 
     if (!booking) {
       return NextResponse.json(
@@ -44,12 +56,12 @@ export async function GET(req: Request, context: any) {
     }
 
     // =========================
-    // GET SEGMENT (UUID SAFE)
+    // GET SEGMENT
     // =========================
     const segmentRes = await db
       .select()
       .from(bookingSegments)
-      .where(sql`${bookingSegments.bookingId} = ${bookingId}`)
+      .where(eq(bookingSegments.bookingId, bookingId))
 
     const segment = segmentRes[0]
 
@@ -192,7 +204,10 @@ export async function GET(req: Request, context: any) {
       }
 
       if (qrBuffer) {
-        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
+        doc.image(qrBuffer, {
+          fit: [150, 150],
+          align: "center"
+        })
       }
 
       doc.moveDown()
