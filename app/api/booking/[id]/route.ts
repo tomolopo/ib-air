@@ -12,15 +12,18 @@ import {
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
+// =========================
+// GET → TICKET PDF
+// =========================
 export async function GET(
   req: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
   try {
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type")
 
-    const bookingId = context.params.id
+    const bookingId = params.id
 
     // =========================
     // GET BOOKING
@@ -85,7 +88,7 @@ export async function GET(
     }
 
     // =========================
-    // AIRPORTS
+    // GET AIRPORTS
     // =========================
     const originRes = await db
       .select()
@@ -108,7 +111,7 @@ export async function GET(
     }
 
     // =========================
-    // AIRLINE
+    // GET AIRLINE
     // =========================
     const airlineRes = await db
       .select()
@@ -125,7 +128,7 @@ export async function GET(
     }
 
     // =========================
-    // PDF GENERATION
+    // GENERATE PDF
     // =========================
     if (type === "ticket") {
       const doc = new PDFDocument({ size: "A4", margin: 50 })
@@ -133,17 +136,20 @@ export async function GET(
 
       doc.on("data", (chunk) => chunks.push(chunk))
 
+      // HEADER
       doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
         align: "center"
       })
 
       doc.moveDown()
 
+      // BOOKING
       doc.fontSize(12)
       doc.text(`PNR: ${booking.pnr}`)
 
       doc.moveDown()
 
+      // FLIGHT DETAILS
       doc.fontSize(14).text("Flight Details", { underline: true })
 
       doc.fontSize(12)
@@ -156,12 +162,13 @@ export async function GET(
 
       doc.moveDown()
 
+      // SEAT
       doc.text(`Seat: ${booking.seat || "Not assigned"}`)
       doc.text(`Status: ${booking.status}`)
 
       doc.moveDown()
 
-      // QR SAFE
+      // QR CODE (SAFE)
       let qrBuffer: Buffer | null = null
 
       try {
@@ -174,7 +181,7 @@ export async function GET(
         const base64Data = qrImage.replace(/^data:image\/png;base64,/, "")
         qrBuffer = Buffer.from(base64Data, "base64")
       } catch (err) {
-        console.log("QR failed:", err)
+        console.log("QR generation failed:", err)
       }
 
       if (qrBuffer) {
@@ -190,6 +197,7 @@ export async function GET(
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
+      // ✅ FIXED FOR NEXT.JS
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
@@ -199,6 +207,7 @@ export async function GET(
     }
 
     return NextResponse.json({ error: "Invalid type" }, { status: 400 })
+
   } catch (error: any) {
     console.error("TICKET ERROR:", error)
 
