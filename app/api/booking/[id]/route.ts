@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import { db } from "@/db"
@@ -15,15 +15,12 @@ import { eq } from "drizzle-orm"
 // =========================
 // GET → TICKET PDF
 // =========================
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req: Request, context: any) {
   try {
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type")
 
-    const bookingId = params.id
+    const bookingId = context.params.id
 
     // =========================
     // GET BOOKING
@@ -197,7 +194,7 @@ export async function GET(
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
-      // ✅ FIXED FOR NEXT.JS
+      // ✅ FIXED FOR NEXT.JS (VERY IMPORTANT)
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
