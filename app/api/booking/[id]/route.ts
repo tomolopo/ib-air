@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import PDFDocument from "pdfkit"
 import QRCode from "qrcode"
 import { db } from "@/db"
@@ -16,17 +16,16 @@ import { eq } from "drizzle-orm"
 // GET → TICKET PDF
 // =========================
 export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> } // ✅ FIXED FOR NEXT 16
 ) {
   try {
+    // ✅ IMPORTANT: await params
+    const { id: bookingId } = await context.params
+
     const { searchParams } = new URL(req.url)
     const type = searchParams.get("type")
 
-    const bookingId = params.id
-
-    // 🔍 DEBUG (VERY IMPORTANT)
-    console.log("PARAMS:", params)
     console.log("BOOKING ID:", bookingId)
 
     if (!bookingId) {
@@ -45,8 +44,6 @@ export async function GET(
       .where(eq(bookings.id, bookingId))
 
     const booking = bookingRes[0]
-
-    console.log("BOOKING RESULT:", booking)
 
     if (!booking) {
       return NextResponse.json(
@@ -109,18 +106,16 @@ export async function GET(
     // =========================
     // GET AIRPORTS
     // =========================
-    const originRes = await db
-      .select()
-      .from(airports)
-      .where(eq(airports.id, route.originId))
+    const origin = (
+      await db.select().from(airports).where(eq(airports.id, route.originId))
+    )[0]
 
-    const destinationRes = await db
-      .select()
-      .from(airports)
-      .where(eq(airports.id, route.destinationId))
-
-    const origin = originRes[0]
-    const destination = destinationRes[0]
+    const destination = (
+      await db
+        .select()
+        .from(airports)
+        .where(eq(airports.id, route.destinationId))
+    )[0]
 
     if (!origin || !destination) {
       return NextResponse.json(
@@ -132,12 +127,12 @@ export async function GET(
     // =========================
     // GET AIRLINE
     // =========================
-    const airlineRes = await db
-      .select()
-      .from(airlines)
-      .where(eq(airlines.id, flight.airlineId))
-
-    const airline = airlineRes[0]
+    const airline = (
+      await db
+        .select()
+        .from(airlines)
+        .where(eq(airlines.id, flight.airlineId))
+    )[0]
 
     if (!airline) {
       return NextResponse.json(
@@ -155,41 +150,33 @@ export async function GET(
 
       doc.on("data", (chunk) => chunks.push(chunk))
 
-      // HEADER
       doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
         align: "center"
       })
 
       doc.moveDown()
 
-      // BOOKING
-      doc.fontSize(12)
-      doc.text(`PNR: ${booking.pnr}`)
+      doc.fontSize(12).text(`PNR: ${booking.pnr}`)
 
       doc.moveDown()
 
-      // FLIGHT DETAILS
       doc.fontSize(14).text("Flight Details", { underline: true })
 
       doc.fontSize(12)
       doc.text(`From: ${origin.city} (${origin.iataCode})`)
       doc.text(`To: ${destination.city} (${destination.iataCode})`)
       doc.text(`Flight: ${flight.flightNumber}`)
-
       doc.text(`Departure: ${new Date(flight.departureTime).toLocaleString()}`)
       doc.text(`Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`)
 
       doc.moveDown()
 
-      // SEAT
       doc.text(`Seat: ${booking.seat || "Not assigned"}`)
       doc.text(`Status: ${booking.status}`)
 
       doc.moveDown()
 
-      // QR CODE
-      let qrBuffer: Buffer | null = null
-
+      // QR
       try {
         const qrData = JSON.stringify({
           pnr: booking.pnr,
@@ -198,20 +185,12 @@ export async function GET(
 
         const qrImage = await QRCode.toDataURL(qrData)
         const base64Data = qrImage.replace(/^data:image\/png;base64,/, "")
-        qrBuffer = Buffer.from(base64Data, "base64")
-      } catch (err) {
-        console.log("QR generation failed:", err)
-      }
+        const qrBuffer = Buffer.from(base64Data, "base64")
 
-      if (qrBuffer) {
-        doc.image(qrBuffer, {
-          fit: [150, 150],
-          align: "center"
-        })
+        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
+      } catch (e) {
+        console.log("QR error:", e)
       }
-
-      doc.moveDown()
-      doc.text("Thank you for flying ✈️", { align: "center" })
 
       doc.end()
 
@@ -219,6 +198,7 @@ export async function GET(
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
+      // ✅ CRITICAL FIX (Next.js body type)
       return new NextResponse(new Uint8Array(pdfBuffer), {
         headers: {
           "Content-Type": "application/pdf",
