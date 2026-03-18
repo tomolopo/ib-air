@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { flights, routes, airports, airlines } from "@/db/schema"
-import { eq, and } from "drizzle-orm"
+import { eq, and, gte, lt, or, ilike } from "drizzle-orm"
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    const {
-      tripType = "one-way",
-      from,
-      to,
-      departureDate,
-      returnDate
-    } = body
+    const { tripType, from, to, departureDate, returnDate } = body
 
     // =========================
     // VALIDATION
@@ -27,43 +21,109 @@ export async function POST(req: NextRequest) {
 
     if (tripType === "round-trip" && !returnDate) {
       return NextResponse.json(
-        { error: "Return date required for round-trip" },
+        { error: "returnDate is required for round-trip" },
         { status: 400 }
       )
     }
 
     // =========================
-    // HELPER FUNCTION
+    // DATE RANGE HELPER
+    // =========================
+    const getDateRange = (dateStr: string) => {
+      const start = new Date(dateStr)
+      const end = new Date(dateStr)
+      end.setDate(end.getDate() + 1)
+      return { start, end }
+    }
+
+    // =========================
+    // FIND AIRPORTS (CITY OR IATA)
+    // =========================
+    const originAirport = await db.query.airports.findFirst({
+      where: (a: any, { or, ilike, eq }: any) =>
+        or(
+          eq(a.iataCode, from.toUpperCase()),
+          ilike(a.city, `%${from}%`)
+        )
+    })
+
+    const destinationAirport = await db.query.airports.findFirst({
+      where: (a: any, { or, ilike, eq }: any) =>
+        or(
+          eq(a.iataCode, to.toUpperCase()),
+          ilike(a.city, `%${to}%`)
+        )
+    })
+
+    if (!originAirport || !destinationAirport) {
+      return NextResponse.json(
+        { error: "Invalid route (city or IATA not found)" },
+        { status: 400 }
+      )
+    }
+
+    // =========================
+    // FETCH ROUTES
+    // =========================
+    const outboundRoutes = await db
+      .select()
+      .from(routes)
+      .where(
+        and(
+          eq(routes.originId, originAirport.id),
+          eq(routes.destinationId, destinationAirport.id)
+        )
+      )
+
+    const inboundRoutes = await db
+      .select()
+      .from(routes)
+      .where(
+        and(
+          eq(routes.originId, destinationAirport.id),
+          eq(routes.destinationId, originAirport.id)
+        )
+      )
+
+    const outboundRouteIds = outboundRoutes.map(r => r.id)
+    const inboundRouteIds = inboundRoutes.map(r => r.id)
+
+    // =========================
+    // FETCH FLIGHTS FUNCTION
     // =========================
     const getFlights = async (
-      originCode: string,
-      destinationCode: string,
-      date: string
+      routeIds: string[],
+      date: string,
+      fromCity: string,
+      toCity: string
     ) => {
-      const origin = await db.query.airports.findFirst({
-        where: (a: any, { eq }: any) => eq(a.iataCode, originCode)
-      })
+      const { start, end } = getDateRange(date)
 
-      const destination = await db.query.airports.findFirst({
-        where: (a: any, { eq }: any) => eq(a.iataCode, destinationCode)
-      })
-
-      if (!origin || !destination) return []
-
-      const route = await db.query.routes.findFirst({
-        where: (r: any, { eq, and }: any) =>
-          and(eq(r.originId, origin.id), eq(r.destinationId, destination.id))
-      })
-
-      if (!route) return []
-
-      const results = await db
-        .select()
+      const flightList = await db
+        .select({
+          id: flights.id,
+          flightNumber: flights.flightNumber,
+          departureTime: flights.departureTime,
+          arrivalTime: flights.arrivalTime,
+          airlineId: flights.airlineId,
+          routeId: flights.routeId
+        })
         .from(flights)
-        .where(eq(flights.routeId, route.id))
+        .where(
+          and(
+            gte(flights.departureTime, start),
+            lt(flights.departureTime, end)
+          )
+        )
 
+      // FILTER BY ROUTE IDS
+      const filtered = flightList.filter(f =>
+        routeIds.includes(f.routeId)
+      )
+
+      // ENRICH RESULTS
       return Promise.all(
-        results.map(async (f: any) => {
+        filtered.map(async f => {
           const airline = await db
             .select()
             .from(airlines)
@@ -76,32 +136,40 @@ export async function POST(req: NextRequest) {
             departureTime: f.departureTime,
             arrivalTime: f.arrivalTime,
             airline: airline?.name,
-            from: origin.city,
-            to: destination.city
+            from: fromCity,
+            to: toCity
           }
         })
       )
     }
 
     // =========================
-    // ONE WAY
+    // OUTBOUND FLIGHTS
     // =========================
-    if (tripType === "one-way") {
-      const outbound = await getFlights(from, to, departureDate)
+    const outbound = await getFlights(
+      outboundRouteIds,
+      departureDate,
+      originAirport.city,
+      destinationAirport.city
+    )
 
-      return NextResponse.json({
-        success: true,
-        tripType,
-        data: { outbound }
-      })
+    // =========================
+    // INBOUND (ROUND TRIP)
+    // =========================
+    let inbound: any[] = []
+
+    if (tripType === "round-trip") {
+      inbound = await getFlights(
+        inboundRouteIds,
+        returnDate,
+        destinationAirport.city,
+        originAirport.city
+      )
     }
 
     // =========================
-    // ROUND TRIP
+    // RESPONSE
     // =========================
-    const outbound = await getFlights(from, to, departureDate)
-    const inbound = await getFlights(to, from, returnDate)
-
     return NextResponse.json({
       success: true,
       tripType,
@@ -110,9 +178,8 @@ export async function POST(req: NextRequest) {
         inbound
       }
     })
-  } catch (error: any) {
-    console.error(error)
 
+  } catch (error: any) {
     return NextResponse.json(
       { error: error.message || "Search failed" },
       { status: 500 }
