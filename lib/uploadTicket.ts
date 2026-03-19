@@ -1,12 +1,18 @@
 import cloudinary from "@/lib/cloudinary"
 
 export async function uploadTicket(buffer: Buffer, pnr: string) {
-  return new Promise<any>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
         folder: "tickets",
-        public_id: pnr,
-        resource_type: "raw" // 🔥 REQUIRED FOR PDF
+
+        // ✅ THIS IS KEY
+        public_id: `${pnr}.pdf`,
+
+        resource_type: "raw",
+
+        // ✅ FORCE FORMAT
+        format: "pdf"
       },
       (error, result) => {
         if (error) return reject(error)
