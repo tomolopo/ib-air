@@ -29,7 +29,14 @@ export default function PayComponent() {
         })
       })
 
-      const data = await res.json()
+      const text = await res.text()
+
+    let data
+    try {
+        data = JSON.parse(text)
+    } catch {
+        throw new Error("Server returned invalid response")
+    }
 
       console.log("PAYMENT RESPONSE:", data)
 

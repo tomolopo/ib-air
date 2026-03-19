@@ -1,54 +1,78 @@
-import PDFDocument from "pdfkit"
-import QRCode from "qrcode"
+import { Buffer } from "buffer"
 
-export async function generateTicketPDF(data: any): Promise<Buffer> {
-  return new Promise(async (resolve) => {
-    const doc = new PDFDocument({ size: "A4", margin: 50 })
+export async function generateTicketPDF(data: {
+  pnr: string
+  airline: string
+  from: string
+  to: string
+  flightNumber: string
+  departure: string | Date
+  arrival: string | Date
+  seat?: string | null
+}) {
 
-    // 🔥 Prevent Vercel font crash
-    doc.font("Helvetica")
+    const departure = new Date(data.departure).toLocaleString()
+    const arrival = new Date(data.arrival).toLocaleString()
+    
+  const content = `
+IB AIR BOARDING PASS
 
-    const chunks: Uint8Array[] = []
-    doc.on("data", (chunk) => chunks.push(chunk))
+PNR: ${data.pnr}
 
-    // HEADER
-    doc.fontSize(20).text(`✈️ ${data.airline} BOARDING PASS`, {
-      align: "center"
-    })
+Airline: ${data.airline}
 
-    doc.moveDown()
-    doc.fontSize(12).text(`PNR: ${data.pnr}`)
+FROM: ${data.from}
+TO: ${data.to}
 
-    doc.moveDown()
+Flight: ${data.flightNumber}
 
-    // FLIGHT DETAILS
-    doc.fontSize(14).text("Flight Details", { underline: true })
+Departure: ${new Date(data.departure).toLocaleString()}
+Arrival: ${new Date(data.arrival).toLocaleString()}
 
-    doc.fontSize(12)
-    doc.text(`From: ${data.from}`)
-    doc.text(`To: ${data.to}`)
-    doc.text(`Flight: ${data.flightNumber}`)
-    doc.text(`Departure: ${new Date(data.departure).toLocaleString()}`)
-    doc.text(`Arrival: ${new Date(data.arrival).toLocaleString()}`)
+Seat: ${data.seat || "Not Assigned"}
 
-    doc.moveDown()
-    doc.text(`Seat: ${data.seat || "Not assigned"}`)
+Thank you for flying with IB AIR ✈️
+`
 
-    doc.moveDown()
+  // 🔥 Simple PDF (no pdfkit)
+  const pdf = `
+%PDF-1.1
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length ${content.length + 100} >>
+stream
+BT
+/F1 12 Tf
+50 700 Td
+(${content.replace(/\n/g, ") Tj T* (")}) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000010 00000 n 
+0000000060 00000 n 
+0000000117 00000 n 
+0000000270 00000 n 
+0000000400 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+500
+%%EOF
+`
 
-    // QR
-    try {
-      const qr = await QRCode.toDataURL(JSON.stringify(data))
-      const base64 = qr.replace(/^data:image\/png;base64,/, "")
-      const buffer = Buffer.from(base64, "base64")
-
-      doc.image(buffer, { fit: [150, 150], align: "center" })
-    } catch {}
-
-    doc.end()
-
-    doc.on("end", () => {
-      resolve(Buffer.concat(chunks))
-    })
-  })
+  return Buffer.from(pdf)
 }
