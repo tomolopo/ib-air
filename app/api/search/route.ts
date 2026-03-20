@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { flights, routes, airports, airlines } from "@/db/schema"
 import { eq, and, gte, lt, or, ilike } from "drizzle-orm"
+import { formatDateTime } from "@/lib/formatDate"
 
 export async function POST(req: NextRequest) {
   try {
@@ -133,8 +134,11 @@ export async function POST(req: NextRequest) {
           return {
             id: f.id,
             flightNumber: f.flightNumber,
-            departureTime: f.departureTime,
-            arrivalTime: f.arrivalTime,
+
+            // ✅ FIX APPLIED HERE
+            departureTime: formatDateTime(f.departureTime),
+            arrivalTime: formatDateTime(f.arrivalTime),
+
             airline: airline?.name,
             from: fromCity,
             to: toCity
@@ -180,6 +184,8 @@ export async function POST(req: NextRequest) {
     })
 
   } catch (error: any) {
+    console.error("SEARCH ERROR:", error)
+
     return NextResponse.json(
       { error: error.message || "Search failed" },
       { status: 500 }
