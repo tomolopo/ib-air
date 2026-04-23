@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const pnr = await generateUniquePNR()
 
     // =========================
-    // SIMPLE PRICING
+    // SIMPLE PRICING (TEMP)
     // =========================
     const totalAmount = flightIds.length * 500
 
@@ -67,37 +67,43 @@ export async function POST(req: NextRequest) {
       .values({
         pnr,
         status: "PENDING",
+        paymentStatus: "PENDING", // ✅ NEW (lifecycle ready)
         totalAmount,
-        passengerName: `${pax[0].firstName} ${pax[0].lastName}` // ✅ FIX
+        passengerName: `${pax[0].firstName} ${pax[0].lastName}`
       })
       .returning()
 
     // =========================
-    // INSERT SEGMENTS (FIXED)
+    // INSERT SEGMENTS
     // =========================
     const segments = flightIds.map((flightId: string, index: number) => ({
       bookingId: booking.id,
       flightId,
-      segmentOrder: index + 1 // ✅ CRITICAL FIX
+      segmentOrder: index + 1
     }))
 
     await db.insert(bookingSegments).values(segments)
 
     // =========================
-    // INSERT PASSENGERS
+    // INSERT PASSENGERS (UPGRADED)
     // =========================
     const passengerRows = pax.map((p: any) => ({
       bookingId: booking.id,
       firstName: p.firstName,
       lastName: p.lastName,
       email: p.email,
-      phone: p.phone
+      phone: p.phone,
+
+      // ✅ NEW FIELDS (safe additions)
+      type: p.type || "adult",
+      passportNumber: p.passportNumber || null,
+      nationality: p.nationality || null
     }))
 
     await db.insert(passengers).values(passengerRows)
 
     // =========================
-    // RESPONSE
+    // RESPONSE (UNCHANGED STRUCTURE)
     // =========================
     return NextResponse.json({
       success: true,

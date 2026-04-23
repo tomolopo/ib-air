@@ -102,10 +102,22 @@ export const flights = pgTable(
 
 export const passengers = pgTable("passengers", {
   id: uuid("id").defaultRandom().primaryKey(),
+
   firstName: varchar("first_name", { length: 100 }),
   lastName: varchar("last_name", { length: 100 }),
   email: varchar("email", { length: 100 }),
   phone: varchar("phone", { length: 20 }),
+
+  // ✅ ADD ALL EXISTING DB FIELDS (CRITICAL)
+  dateOfBirth: timestamp("date_of_birth"),
+  nationality: varchar("nationality", { length: 100 }),
+  gender: varchar("gender", { length: 20 }),
+  type: varchar("type", { length: 20 }).default("ADULT"),
+  passportNumber: varchar("passport_number", { length: 50 }),
+
+  // ✅ THIS FIXES YOUR ERROR
+  seat: varchar("seat", { length: 10 }),
+
   createdAt: timestamp("created_at").defaultNow()
 })
 
@@ -145,4 +157,20 @@ export const bookingPassengers = pgTable("booking_passengers", {
   id: uuid("id").defaultRandom().primaryKey(),
   bookingId: uuid("booking_id").notNull(),
   passengerId: uuid("passenger_id").notNull()
+})
+
+ export const seats = pgTable("seats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  flightId: uuid("flight_id").notNull(),
+  seatNumber: text("seat_number").notNull(),
+  class: text("class").default("economy"),
+  isAvailable: boolean("is_available").default(true)
+})
+
+
+export const seatLocks = pgTable("seat_locks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  seatId: uuid("seat_id").notNull(),
+  bookingId: uuid("booking_id").notNull(),
+  expiresAt: timestamp("expires_at").notNull()
 })

@@ -12,12 +12,13 @@ import {
 } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
+import { uploadTicket } from "@/lib/uploadTicket"
+
 export async function GET(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    // ✅ FIX 1: Next.js 16 params
     const { id: bookingId } = await context.params
 
     const { searchParams } = new URL(req.url)
@@ -39,6 +40,26 @@ export async function GET(
 
     if (!booking) {
       return NextResponse.json({ error: "Booking not found" }, { status: 404 })
+    }
+
+    // =========================
+    // ✅ PREVENT DUPLICATE GENERATION
+    // =========================
+    if (type === "ticket" && booking.ticketUrl) {
+      return NextResponse.json({
+        success: true,
+        ticketUrl: booking.ticketUrl
+      })
+    }
+
+    // =========================
+    // ✅ ENSURE PAYMENT DONE
+    // =========================
+    if (type === "ticket" && booking.status !== "PAID") {
+      return NextResponse.json(
+        { error: "Booking not paid yet" },
+        { status: 400 }
+      )
     }
 
     // =========================
@@ -128,7 +149,7 @@ export async function GET(
     }
 
     // =========================
-    // PDF GENERATION (FIXED)
+    // GENERATE + UPLOAD TICKET
     // =========================
     if (type === "ticket") {
       const doc = new PDFDocument({
@@ -136,12 +157,12 @@ export async function GET(
         margin: 50
       })
 
-      // ✅ FIX 2: Prevent font crash on Vercel
       doc.font("Helvetica")
 
       const chunks: Uint8Array[] = []
       doc.on("data", (chunk) => chunks.push(chunk))
 
+      // HEADER
       doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
         align: "center"
       })
@@ -187,11 +208,33 @@ export async function GET(
         doc.on("end", () => resolve(Buffer.concat(chunks)))
       })
 
-      return new NextResponse(new Uint8Array(pdfBuffer), {
-        headers: {
-          "Content-Type": "application/pdf",
-          "Content-Disposition": `attachment; filename=ticket-${booking.pnr}.pdf`
-        }
+      // =========================
+      // ✅ UPLOAD TO CLOUDINARY
+      // =========================
+      if (!booking.pnr) {
+      throw new Error("PNR is missing")
+      }
+
+      const upload: any = await uploadTicket(pdfBuffer, booking.pnr)
+
+      if (!upload?.secure_url) {
+        throw new Error("Upload failed")
+      }
+
+      // =========================
+      // ✅ SAVE + UPDATE STATUS
+      // =========================
+      await db
+        .update(bookings)
+        .set({
+          ticketUrl: upload.secure_url,
+          status: "TICKETED"
+        })
+        .where(eq(bookings.id, bookingId))
+
+      return NextResponse.json({
+        success: true,
+        ticketUrl: upload.secure_url
       })
     }
 
