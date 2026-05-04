@@ -1,15 +1,28 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { seats, seatLocks } from "@/db/schema"
-import { eq, gt, lte, inArray } from "drizzle-orm"
+import { eq, lte, inArray } from "drizzle-orm"
+
+import { logInfo, logError } from "@/lib/logger"
+import { generateRequestId } from "@/lib/requestId"
 
 export async function GET(req: NextRequest) {
+  const requestId = generateRequestId()
+
   try {
     const flightId = req.nextUrl.searchParams.get("flightId")
 
+    // =========================
+    // LOG REQUEST
+    // =========================
+    logInfo("GET_SEATS_REQUEST", {
+      requestId,
+      flightId
+    })
+
     if (!flightId) {
       return NextResponse.json(
-        { error: "Missing flightId" },
+        { error: "Missing flightId", requestId },
         { status: 400 }
       )
     }
@@ -32,14 +45,14 @@ export async function GET(req: NextRequest) {
     const seatIds = allSeats.map(s => s.id)
 
     // =========================
-    // GET ACTIVE LOCKS FOR THIS FLIGHT ONLY
+    // GET ACTIVE LOCKS
     // =========================
-    const activeLocks = await db
-      .select()
-      .from(seatLocks)
-      .where(
-        inArray(seatLocks.seatId, seatIds) // ✅ critical fix
-      )
+    const activeLocks = seatIds.length
+      ? await db
+          .select()
+          .from(seatLocks)
+          .where(inArray(seatLocks.seatId, seatIds))
+      : []
 
     const lockedSeatIds = activeLocks.map(l => l.seatId)
 
@@ -56,13 +69,29 @@ export async function GET(req: NextRequest) {
         : "booked"
     }))
 
+    // =========================
+    // LOG SUCCESS
+    // =========================
+    logInfo("GET_SEATS_SUCCESS", {
+      requestId,
+      flightId,
+      totalSeats: result.length,
+      lockedSeats: lockedSeatIds.length
+    })
+
     return NextResponse.json({ seats: result })
 
   } catch (error: any) {
-    console.error("GET SEATS ERROR:", error)
+    logError("GET_SEATS_FAILED", {
+      requestId,
+      error: error.message
+    })
 
     return NextResponse.json(
-      { error: error.message || "Failed to fetch seats" },
+      {
+        error: error.message || "Failed to fetch seats",
+        requestId
+      },
       { status: 500 }
     )
   }
