@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { bookings, bookingSegments, passengers } from "@/db/schema"
+import {
+  bookings,
+  bookingSegments,
+  passengers,
+  bookingPassengers
+} from "@/db/schema"
+
 import { logInfo, logError } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 
@@ -36,9 +42,6 @@ export async function POST(req: NextRequest) {
 
     const { flights: flightIds, passengers: pax } = body
 
-    // =========================
-    // LOG REQUEST
-    // =========================
     logInfo("BOOKING_REQUEST", {
       requestId,
       flightsCount: flightIds?.length,
@@ -68,7 +71,7 @@ export async function POST(req: NextRequest) {
     const pnr = await generateUniquePNR()
 
     // =========================
-    // SIMPLE PRICING (TEMP)
+    // SIMPLE PRICING
     // =========================
     const totalAmount = flightIds.length * 500
 
@@ -98,23 +101,35 @@ export async function POST(req: NextRequest) {
     await db.insert(bookingSegments).values(segments)
 
     // =========================
-    // INSERT PASSENGERS
+    // INSERT PASSENGERS (FIXED)
     // =========================
-    const passengerRows = pax.map((p: any) => ({
-      bookingId: booking.id,
-      firstName: p.firstName,
-      lastName: p.lastName,
-      email: p.email,
-      phone: p.phone,
-      type: p.type || "adult",
-      passportNumber: p.passportNumber || null,
-      nationality: p.nationality || null
-    }))
-
-    await db.insert(passengers).values(passengerRows)
+    const insertedPassengers = await db
+      .insert(passengers)
+      .values(
+        pax.map((p: any) => ({
+          firstName: p.firstName,
+          lastName: p.lastName,
+          email: p.email,
+          phone: p.phone,
+          type: p.type || "adult",
+          passportNumber: p.passportNumber || null,
+          nationality: p.nationality || null
+        }))
+      )
+      .returning()
 
     // =========================
-    // GENERATE SEAT URL (NEW)
+    // LINK PASSENGERS TO BOOKING (NEW FIX)
+    // =========================
+    await db.insert(bookingPassengers).values(
+      insertedPassengers.map((p) => ({
+        bookingId: booking.id,
+        passengerId: p.id
+      }))
+    )
+
+    // =========================
+    // GENERATE SEAT URL
     // =========================
     const flightId = flightIds[0]
 
@@ -127,12 +142,9 @@ export async function POST(req: NextRequest) {
       totalAmount,
       flightsCount: flightIds.length,
       passengersCount: pax.length,
-      seatSelectionUrl // ✅ NEW FIELD
+      seatSelectionUrl
     }
 
-    // =========================
-    // LOG SUCCESS
-    // =========================
     logInfo("BOOKING_SUCCESS", {
       requestId,
       bookingId: booking.id,
