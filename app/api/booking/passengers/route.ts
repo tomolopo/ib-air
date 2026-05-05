@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { passengers, bookingPassengers } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 
 export async function GET(req: NextRequest) {
   const bookingId = req.nextUrl.searchParams.get("bookingId")
@@ -17,9 +17,14 @@ export async function GET(req: NextRequest) {
 
   const paxIds = links.map(p => p.passengerId)
 
-  const pax = await db.select().from(passengers)
+  if (paxIds.length === 0) {
+    return NextResponse.json({ passengers: [] })
+  }
 
-  const result = pax.filter(p => paxIds.includes(p.id))
+  const pax = await db
+    .select()
+    .from(passengers)
+    .where(inArray(passengers.id, paxIds))
 
-  return NextResponse.json({ passengers: result })
+  return NextResponse.json({ passengers: pax })
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { flights, routes, airports, airlines } from "@/db/schema"
-import { eq, and, gte, lt, or, ilike } from "drizzle-orm"
+import { flights, routes, airlines } from "@/db/schema"
+import { eq, and, gte, lt, inArray } from "drizzle-orm"
 import { formatDateTime } from "@/lib/formatDate"
 
 export async function POST(req: NextRequest) {
@@ -122,29 +122,25 @@ export async function POST(req: NextRequest) {
         routeIds.includes(f.routeId)
       )
 
-      // ENRICH RESULTS
-      return Promise.all(
-        filtered.map(async f => {
-          const airline = await db
-            .select()
-            .from(airlines)
-            .where(eq(airlines.id, f.airlineId))
-            .then(res => res[0])
+      if (filtered.length === 0) return []
 
-          return {
-            id: f.id,
-            flightNumber: f.flightNumber,
+      // Batch fetch all unique airlines in one query instead of one per flight
+      const uniqueAirlineIds = [...new Set(filtered.map(f => f.airlineId))]
+      const airlineList = await db
+        .select()
+        .from(airlines)
+        .where(inArray(airlines.id, uniqueAirlineIds))
+      const airlineMap = new Map(airlineList.map(a => [a.id, a]))
 
-            // ✅ FIX APPLIED HERE
-            departureTime: formatDateTime(f.departureTime),
-            arrivalTime: formatDateTime(f.arrivalTime),
-
-            airline: airline?.name,
-            from: fromCity,
-            to: toCity
-          }
-        })
-      )
+      return filtered.map(f => ({
+        id: f.id,
+        flightNumber: f.flightNumber,
+        departureTime: formatDateTime(f.departureTime),
+        arrivalTime: formatDateTime(f.arrivalTime),
+        airline: airlineMap.get(f.airlineId)?.name,
+        from: fromCity,
+        to: toCity
+      }))
     }
 
     // =========================

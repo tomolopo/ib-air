@@ -30,11 +30,11 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================
-    // CLEAN EXPIRED LOCKS (NEW)
+    // CLEAN EXPIRED LOCKS (~10% of requests)
     // =========================
-    await db
-      .delete(seatLocks)
-      .where(lte(seatLocks.expiresAt, new Date()))
+    if (Math.random() < 0.1) {
+      await db.delete(seatLocks).where(lte(seatLocks.expiresAt, new Date()))
+    }
 
     // =========================
     // CHECK SEAT EXISTS + AVAILABLE

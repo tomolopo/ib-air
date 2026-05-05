@@ -28,11 +28,11 @@ export async function GET(req: NextRequest) {
     }
 
     // =========================
-    // CLEAN EXPIRED LOCKS
+    // CLEAN EXPIRED LOCKS (~10% of requests)
     // =========================
-    await db
-      .delete(seatLocks)
-      .where(lte(seatLocks.expiresAt, new Date()))
+    if (Math.random() < 0.1) {
+      await db.delete(seatLocks).where(lte(seatLocks.expiresAt, new Date()))
+    }
 
     // =========================
     // GET SEATS FOR FLIGHT
