@@ -8,9 +8,11 @@ import {
   flights,
   routes,
   airports,
-  airlines
+  airlines,
+  passengers,
+  bookingPassengers
 } from "@/db/schema"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 
 import { uploadTicket } from "@/lib/uploadTicket"
 
@@ -25,25 +27,28 @@ export async function GET(
     const type = searchParams.get("type")
 
     if (!bookingId) {
-      return NextResponse.json({ error: "Missing booking ID" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Missing booking ID" },
+        { status: 400 }
+      )
     }
 
     // =========================
     // GET BOOKING
     // =========================
-    const booking = (
-      await db
-        .select()
-        .from(bookings)
-        .where(eq(bookings.id, bookingId))
-    )[0]
+    const booking = await db.query.bookings.findFirst({
+      where: (b, { eq }) => eq(b.id, bookingId)
+    })
 
     if (!booking) {
-      return NextResponse.json({ error: "Booking not found" }, { status: 404 })
+      return NextResponse.json(
+        { error: "Booking not found" },
+        { status: 404 }
+      )
     }
 
     // =========================
-    // ✅ PREVENT DUPLICATE GENERATION
+    // PREVENT DUPLICATE
     // =========================
     if (type === "ticket" && booking.ticketUrl) {
       return NextResponse.json({
@@ -53,7 +58,7 @@ export async function GET(
     }
 
     // =========================
-    // ✅ ENSURE PAYMENT DONE
+    // ENSURE PAYMENT
     // =========================
     if (type === "ticket" && booking.status !== "PAID") {
       return NextResponse.json(
@@ -63,66 +68,57 @@ export async function GET(
     }
 
     // =========================
-    // GET SEGMENT
+    // SEGMENT
     // =========================
-    const segment = (
-      await db
-        .select()
-        .from(bookingSegments)
-        .where(eq(bookingSegments.bookingId, bookingId))
-    )[0]
+    const segment = await db.query.bookingSegments.findFirst({
+      where: (s, { eq }) => eq(s.bookingId, bookingId)
+    })
 
     if (!segment) {
       return NextResponse.json(
-        { error: "No segment found for booking" },
+        { error: "No segment found" },
         { status: 404 }
       )
     }
 
     // =========================
-    // GET FLIGHT
+    // FLIGHT
     // =========================
-    const flight = (
-      await db
-        .select()
-        .from(flights)
-        .where(eq(flights.id, segment.flightId))
-    )[0]
+    const flight = await db.query.flights.findFirst({
+      where: (f, { eq }) => eq(f.id, segment.flightId)
+    })
 
     if (!flight) {
-      return NextResponse.json({ error: "Flight not found" }, { status: 404 })
+      return NextResponse.json(
+        { error: "Flight not found" },
+        { status: 404 }
+      )
     }
 
     // =========================
-    // GET ROUTE
+    // ROUTE
     // =========================
-    const route = (
-      await db
-        .select()
-        .from(routes)
-        .where(eq(routes.id, flight.routeId))
-    )[0]
+    const route = await db.query.routes.findFirst({
+      where: (r, { eq }) => eq(r.id, flight.routeId)
+    })
 
     if (!route) {
-      return NextResponse.json({ error: "Route not found" }, { status: 404 })
+      return NextResponse.json(
+        { error: "Route not found" },
+        { status: 404 }
+      )
     }
 
     // =========================
     // AIRPORTS
     // =========================
-    const origin = (
-      await db
-        .select()
-        .from(airports)
-        .where(eq(airports.id, route.originId))
-    )[0]
+    const origin = await db.query.airports.findFirst({
+      where: (a, { eq }) => eq(a.id, route.originId)
+    })
 
-    const destination = (
-      await db
-        .select()
-        .from(airports)
-        .where(eq(airports.id, route.destinationId))
-    )[0]
+    const destination = await db.query.airports.findFirst({
+      where: (a, { eq }) => eq(a.id, route.destinationId)
+    })
 
     if (!origin || !destination) {
       return NextResponse.json(
@@ -134,12 +130,9 @@ export async function GET(
     // =========================
     // AIRLINE
     // =========================
-    const airline = (
-      await db
-        .select()
-        .from(airlines)
-        .where(eq(airlines.id, flight.airlineId))
-    )[0]
+    const airline = await db.query.airlines.findFirst({
+      where: (a, { eq }) => eq(a.id, flight.airlineId)
+    })
 
     if (!airline) {
       return NextResponse.json(
@@ -149,9 +142,32 @@ export async function GET(
     }
 
     // =========================
-    // GENERATE + UPLOAD TICKET
+    // 🔥 MULTI-PASSENGER FETCH
+    // =========================
+    const links = await db
+      .select()
+      .from(bookingPassengers)
+      .where(eq(bookingPassengers.bookingId, bookingId))
+
+    const passengerIds = links.map(l => l.passengerId)
+
+    let pax: any[] = []
+
+    if (passengerIds.length > 0) {
+      pax = await db
+        .select()
+        .from(passengers)
+        .where(inArray(passengers.id, passengerIds))
+    }
+
+    // =========================
+    // GENERATE TICKET
     // =========================
     if (type === "ticket") {
+      if (!booking.pnr) {
+        throw new Error("PNR is missing")
+      }
+
       const doc = new PDFDocument({
         size: "A4",
         margin: 50
@@ -160,7 +176,7 @@ export async function GET(
       doc.font("Helvetica")
 
       const chunks: Uint8Array[] = []
-      doc.on("data", (chunk) => chunks.push(chunk))
+      doc.on("data", chunk => chunks.push(chunk))
 
       // HEADER
       doc.fontSize(20).text(`✈️ ${airline.name} BOARDING PASS`, {
@@ -177,11 +193,34 @@ export async function GET(
       doc.text(`From: ${origin.city} (${origin.iataCode})`)
       doc.text(`To: ${destination.city} (${destination.iataCode})`)
       doc.text(`Flight: ${flight.flightNumber}`)
-      doc.text(`Departure: ${new Date(flight.departureTime).toLocaleString()}`)
-      doc.text(`Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`)
+      doc.text(
+        `Departure: ${new Date(flight.departureTime).toLocaleString()}`
+      )
+      doc.text(
+        `Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`
+      )
+
+      // =========================
+      // 🔥 PASSENGER SECTION
+      // =========================
+      doc.moveDown()
+      doc.fontSize(14).text("Passenger Details", { underline: true })
+
+      if (pax.length === 0) {
+        doc.text("No passengers found")
+      } else {
+        pax.forEach((p, i) => {
+          doc.moveDown(0.5)
+
+          doc.fontSize(12).text(
+            `${i + 1}. ${p.firstName} ${p.lastName}`
+          )
+
+          doc.text(`Seat: ${p.seat || "Not assigned"}`)
+        })
+      }
 
       doc.moveDown()
-      doc.text(`Seat: ${booking.seat || "Not assigned"}`)
       doc.text(`Status: ${booking.status}`)
 
       doc.moveDown()
@@ -197,7 +236,10 @@ export async function GET(
         const base64 = qrImage.replace(/^data:image\/png;base64,/, "")
         const qrBuffer = Buffer.from(base64, "base64")
 
-        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
+        doc.image(qrBuffer, {
+          fit: [150, 150],
+          align: "center"
+        })
       } catch (e) {
         console.log("QR error:", e)
       }
@@ -209,12 +251,8 @@ export async function GET(
       })
 
       // =========================
-      // ✅ UPLOAD TO CLOUDINARY
+      // UPLOAD
       // =========================
-      if (!booking.pnr) {
-      throw new Error("PNR is missing")
-      }
-
       const upload: any = await uploadTicket(pdfBuffer, booking.pnr)
 
       if (!upload?.secure_url) {
@@ -222,7 +260,7 @@ export async function GET(
       }
 
       // =========================
-      // ✅ SAVE + UPDATE STATUS
+      // SAVE
       // =========================
       await db
         .update(bookings)
@@ -238,7 +276,10 @@ export async function GET(
       })
     }
 
-    return NextResponse.json({ error: "Invalid type" }, { status: 400 })
+    return NextResponse.json(
+      { error: "Invalid type" },
+      { status: 400 }
+    )
 
   } catch (error: any) {
     console.error("TICKET ERROR:", error)
