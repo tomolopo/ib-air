@@ -3,12 +3,27 @@ import { db } from "@/db"
 import {
   bookings,
   bookingSegments,
+  flights,
   passengers,
   bookingPassengers
 } from "@/db/schema"
+import { eq } from "drizzle-orm"
 
 import { logInfo, logError } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function resolveFlightId(idOrNumber: string): Promise<string> {
+  if (UUID_REGEX.test(idOrNumber)) return idOrNumber
+
+  const flight = await db.query.flights.findFirst({
+    where: (f, { eq }) => eq(f.flightNumber, idOrNumber)
+  })
+
+  if (!flight) throw new Error(`Flight not found: ${idOrNumber}`)
+  return flight.id
+}
 
 // =========================
 // GENERATE PNR
@@ -66,6 +81,13 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================
+    // RESOLVE FLIGHT IDs (accept UUID or flight number)
+    // =========================
+    const resolvedFlightIds = await Promise.all(
+      flightIds.map((id: string) => resolveFlightId(id))
+    )
+
+    // =========================
     // GENERATE PNR
     // =========================
     const pnr = await generateUniquePNR()
@@ -73,7 +95,7 @@ export async function POST(req: NextRequest) {
     // =========================
     // SIMPLE PRICING
     // =========================
-    const totalAmount = flightIds.length * 500
+    const totalAmount = resolvedFlightIds.length * 500
 
     // =========================
     // CREATE BOOKING
@@ -92,7 +114,7 @@ export async function POST(req: NextRequest) {
     // =========================
     // INSERT SEGMENTS
     // =========================
-    const segments = flightIds.map((flightId: string, index: number) => ({
+    const segments = resolvedFlightIds.map((flightId: string, index: number) => ({
       bookingId: booking.id,
       flightId,
       segmentOrder: index + 1
@@ -138,7 +160,7 @@ export async function POST(req: NextRequest) {
       pnr,
       bookingId: booking.id,
       totalAmount,
-      flightsCount: flightIds.length,
+      flightsCount: resolvedFlightIds.length,
       passengersCount: pax.length,
       paymentUrl
     }
