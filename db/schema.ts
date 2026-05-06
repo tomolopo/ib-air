@@ -118,6 +118,9 @@ export const passengers = pgTable("passengers", {
   // ✅ THIS FIXES YOUR ERROR
   seat: varchar("seat", { length: 10 }),
 
+  checkedIn: boolean("checked_in").default(false),
+  checkedInAt: timestamp("checked_in_at"),
+
   createdAt: timestamp("created_at").defaultNow()
 })
 
