@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { passengers, seats, seatLocks } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
-
 import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 
@@ -62,6 +61,15 @@ export async function POST(req: NextRequest) {
       .where(eq(passengers.id, passengerId))
 
     // =========================
+    // READ LOCK (get bookingId before deleting)
+    // =========================
+    const lock = await db
+      .select()
+      .from(seatLocks)
+      .where(eq(seatLocks.seatId, seatId))
+      .then(res => res[0])
+
+    // =========================
     // REMOVE LOCK
     // =========================
     await db
@@ -86,6 +94,23 @@ export async function POST(req: NextRequest) {
         endpoint: "SEAT_CONFIRM",
         duration
       })
+    }
+
+    // =========================
+    // TRIGGER TICKET (NON-BLOCKING)
+    // =========================
+    if (lock?.bookingId) {
+      const ticketUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/booking/${lock.bookingId}?type=ticket`
+
+      fetch(ticketUrl).catch(err => {
+        logError("TICKET_TRIGGER_FAILED", {
+          requestId,
+          bookingId: lock.bookingId,
+          error: err.message
+        })
+      })
+
+      logInfo("TICKET_TRIGGERED", { requestId, bookingId: lock.bookingId })
     }
 
     return NextResponse.json({

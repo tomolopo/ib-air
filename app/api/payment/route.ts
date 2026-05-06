@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { bookings } from "@/db/schema"
+import { bookings, bookingSegments } from "@/db/schema"
 import { eq } from "drizzle-orm"
 
 import { logInfo, logError } from "@/lib/logger"
@@ -63,12 +63,12 @@ export async function POST(req: NextRequest) {
       })
 
       // =========================
-      // UPDATE STATUS (FAST)
+      // UPDATE STATUS
       // =========================
       await db
         .update(bookings)
         .set({
-          status: "PAID", // ✅ unchanged
+          status: "PAID",
           paymentStatus: "COMPLETED"
         })
         .where(eq(bookings.id, bookingId))
@@ -79,28 +79,26 @@ export async function POST(req: NextRequest) {
       })
 
       // =========================
-      // TRIGGER TICKET GENERATION (NON-BLOCKING)
+      // GET FLIGHT FOR SEAT SELECTION URL
       // =========================
-      const ticketUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/booking/${bookingId}?type=ticket`
-
-      fetch(ticketUrl).catch(err => {
-        logError("TICKET_GENERATION_FAILED", {
-          requestId,
-          bookingId,
-          error: err.message
-        })
+      const segment = await db.query.bookingSegments.findFirst({
+        where: (s, { eq }) => eq(s.bookingId, bookingId)
       })
 
-      logInfo("TICKET_TRIGGERED", {
+      const seatSelectionUrl = segment
+        ? `${process.env.NEXT_PUBLIC_BASE_URL}/seats?bookingId=${bookingId}&flightId=${segment.flightId}`
+        : null
+
+      logInfo("SEAT_SELECTION_URL_GENERATED", {
         requestId,
         bookingId,
-        ticketUrl
+        seatSelectionUrl
       })
 
       return NextResponse.json({
         success: true,
-        message: "Payment successful. Ticket is being generated.",
-        ticketEndpoint: ticketUrl
+        message: "Payment successful. Please select your seat.",
+        seatSelectionUrl
       })
     }
 

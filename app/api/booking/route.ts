@@ -129,11 +129,9 @@ export async function POST(req: NextRequest) {
     )
 
     // =========================
-    // GENERATE SEAT URL
+    // GENERATE PAYMENT URL
     // =========================
-    const flightId = flightIds[0]
-
-    const seatSelectionUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/seats?bookingId=${booking.id}&flightId=${flightId}`
+    const paymentUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/pay?bookingId=${booking.id}`
 
     const response = {
       success: true,
@@ -142,7 +140,7 @@ export async function POST(req: NextRequest) {
       totalAmount,
       flightsCount: flightIds.length,
       passengersCount: pax.length,
-      seatSelectionUrl
+      paymentUrl
     }
 
     logInfo("BOOKING_SUCCESS", {
