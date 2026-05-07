@@ -6,6 +6,24 @@ import { eq, lte, inArray } from "drizzle-orm"
 import { logInfo, logError } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 
+const BUSINESS_ROWS = [1, 2, 3, 4, 5]
+const ECONOMY_ROWS = Array.from({ length: 25 }, (_, i) => i + 6) // rows 6–30
+const COLS = ["A", "B", "C", "D", "E", "F"]
+
+async function generateSeatsForFlight(flightId: string) {
+  const rows = [...BUSINESS_ROWS, ...ECONOMY_ROWS]
+  const values = rows.flatMap(row =>
+    COLS.map(col => ({
+      flightId,
+      seatNumber: `${row}${col}`,
+      class: BUSINESS_ROWS.includes(row) ? "business" : "economy",
+      isAvailable: true,
+    }))
+  )
+  await db.insert(seats).values(values)
+  logInfo("SEATS_AUTO_GENERATED", { flightId, count: values.length })
+}
+
 export async function GET(req: NextRequest) {
   const requestId = generateRequestId()
 
@@ -35,12 +53,20 @@ export async function GET(req: NextRequest) {
     }
 
     // =========================
-    // GET SEATS FOR FLIGHT
+    // GET SEATS FOR FLIGHT (auto-generate if none exist)
     // =========================
-    const allSeats = await db
+    let allSeats = await db
       .select()
       .from(seats)
       .where(eq(seats.flightId, flightId))
+
+    if (allSeats.length === 0) {
+      await generateSeatsForFlight(flightId)
+      allSeats = await db
+        .select()
+        .from(seats)
+        .where(eq(seats.flightId, flightId))
+    }
 
     const seatIds = allSeats.map(s => s.id)
 
