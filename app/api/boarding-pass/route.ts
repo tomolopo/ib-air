@@ -7,19 +7,29 @@ import { generateRequestId } from "@/lib/requestId"
 
 export async function GET(req: NextRequest) {
   const requestId = generateRequestId()
-  const bookingId = req.nextUrl.searchParams.get("bookingId")
+  const pnr = req.nextUrl.searchParams.get("pnr")
+  const lastName = req.nextUrl.searchParams.get("lastName")
 
-  if (!bookingId) {
-    return NextResponse.json({ error: "Missing bookingId", requestId }, { status: 400 })
+  if (!pnr || !lastName) {
+    return NextResponse.json(
+      { error: "Missing pnr or lastName", requestId },
+      { status: 400 }
+    )
   }
 
   try {
+    // =========================
+    // LOOK UP BOOKING BY PNR
+    // =========================
     const booking = await db.query.bookings.findFirst({
-      where: (b, { eq }) => eq(b.id, bookingId)
+      where: (b, { eq }) => eq(b.pnr, pnr.toUpperCase())
     })
 
     if (!booking) {
-      return NextResponse.json({ error: "Booking not found", requestId }, { status: 404 })
+      return NextResponse.json(
+        { error: "Booking not found. Please check your PNR.", requestId },
+        { status: 404 }
+      )
     }
 
     if (!booking.ticketUrl) {
@@ -29,21 +39,38 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    // =========================
+    // FETCH PASSENGERS
+    // =========================
     const links = await db
       .select()
       .from(bookingPassengers)
-      .where(eq(bookingPassengers.bookingId, bookingId))
+      .where(eq(bookingPassengers.bookingId, booking.id))
 
     const passengerIds = links.map(l => l.passengerId)
     const pax = passengerIds.length > 0
       ? await db.select().from(passengers).where(inArray(passengers.id, passengerIds))
       : []
 
-    logInfo("BOARDING_PASS_FETCHED", { requestId, bookingId })
+    // =========================
+    // VERIFY LAST NAME
+    // =========================
+    const matched = pax.filter(
+      p => p.lastName?.toLowerCase() === lastName.trim().toLowerCase()
+    )
+
+    if (matched.length === 0) {
+      return NextResponse.json(
+        { error: "Last name does not match any passenger on this booking.", requestId },
+        { status: 403 }
+      )
+    }
+
+    logInfo("BOARDING_PASS_FETCHED", { requestId, bookingId: booking.id, pnr })
 
     return NextResponse.json({
       success: true,
-      bookingId,
+      bookingId: booking.id,
       pnr: booking.pnr,
       status: booking.status,
       ticketUrl: booking.ticketUrl,
