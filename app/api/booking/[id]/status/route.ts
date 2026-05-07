@@ -26,6 +26,11 @@ export async function GET(
 
     logInfo("BOOKING_STATUS_FETCHED", { requestId, bookingId: id })
 
+    const paymentUrl =
+      booking.paymentStatus === "PENDING"
+        ? `${process.env.NEXT_PUBLIC_BASE_URL}/pay?bookingId=${booking.id}`
+        : null
+
     return NextResponse.json({
       success: true,
       bookingId: booking.id,
@@ -34,7 +39,8 @@ export async function GET(
       paymentStatus: booking.paymentStatus,
       totalAmount: booking.totalAmount,
       passengerName: booking.passengerName,
-      createdAt: booking.createdAt
+      createdAt: booking.createdAt,
+      paymentUrl
     })
   } catch (error: any) {
     logError("BOOKING_STATUS_FAILED", { requestId, error: error.message })
