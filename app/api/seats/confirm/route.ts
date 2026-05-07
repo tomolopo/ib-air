@@ -4,6 +4,7 @@ import { passengers, seats, seatLocks } from "@/db/schema"
 import { eq, and } from "drizzle-orm"
 import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
+import { createTicket } from "@/lib/createTicket"
 
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
@@ -97,25 +98,27 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================
-    // TRIGGER TICKET (NON-BLOCKING)
+    // GENERATE TICKET
     // =========================
-    if (lock?.bookingId) {
-      const ticketUrl = `${process.env.NEXT_PUBLIC_BASE_URL}/api/booking/${lock.bookingId}?type=ticket`
+    let ticketUrl: string | null = null
 
-      fetch(ticketUrl).catch(err => {
-        logError("TICKET_TRIGGER_FAILED", {
+    if (lock?.bookingId) {
+      try {
+        ticketUrl = await createTicket(lock.bookingId)
+        logInfo("TICKET_GENERATED", { requestId, bookingId: lock.bookingId, ticketUrl })
+      } catch (err: any) {
+        logError("TICKET_GENERATION_FAILED", {
           requestId,
           bookingId: lock.bookingId,
           error: err.message
         })
-      })
-
-      logInfo("TICKET_TRIGGERED", { requestId, bookingId: lock.bookingId })
+      }
     }
 
     return NextResponse.json({
       success: true,
-      seatAssigned: seat.seatNumber
+      seatAssigned: seat.seatNumber,
+      ticketUrl
     })
 
   } catch (error: any) {

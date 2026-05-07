@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import PDFDocument from "pdfkit"
-import QRCode from "qrcode"
 import { db } from "@/db"
 import {
-  bookings,
   bookingSegments,
   flights,
   routes,
@@ -14,7 +11,7 @@ import {
 } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
 
-import { uploadTicket } from "@/lib/uploadTicket"
+import { createTicket } from "@/lib/createTicket"
 import { logInfo, logError } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 
@@ -132,76 +129,9 @@ export async function GET(
     // GENERATE TICKET
     // =========================
     if (type === "ticket") {
-      if (!booking.pnr) {
-        throw new Error("PNR is missing")
-      }
-
-      logInfo("TICKET_GENERATION_START", { requestId, bookingId, pnr: booking.pnr })
-
-      const doc = new PDFDocument({ size: "A4", margin: 50 })
-      doc.font("Helvetica")
-
-      const chunks: Uint8Array[] = []
-      doc.on("data", chunk => chunks.push(chunk))
-
-      doc.fontSize(20).text(`${airline.name} BOARDING PASS`, { align: "center" })
-      doc.moveDown()
-      doc.fontSize(12).text(`PNR: ${booking.pnr}`)
-      doc.moveDown()
-      doc.fontSize(14).text("Flight Details", { underline: true })
-      doc.fontSize(12)
-      doc.text(`From: ${origin.city} (${origin.iataCode})`)
-      doc.text(`To: ${destination.city} (${destination.iataCode})`)
-      doc.text(`Flight: ${flight.flightNumber}`)
-      doc.text(`Departure: ${new Date(flight.departureTime).toLocaleString()}`)
-      doc.text(`Arrival: ${new Date(flight.arrivalTime).toLocaleString()}`)
-
-      doc.moveDown()
-      doc.fontSize(14).text("Passenger Details", { underline: true })
-
-      if (pax.length === 0) {
-        doc.text("No passengers found")
-      } else {
-        pax.forEach((p, i) => {
-          doc.moveDown(0.5)
-          doc.fontSize(12).text(`${i + 1}. ${p.firstName} ${p.lastName}`)
-          doc.text(`Seat: ${p.seat || "Not assigned"}`)
-        })
-      }
-
-      doc.moveDown()
-      doc.text(`Status: ${booking.status}`)
-      doc.moveDown()
-
-      try {
-        const qrData = JSON.stringify({ pnr: booking.pnr, flight: flight.flightNumber })
-        const qrImage = await QRCode.toDataURL(qrData)
-        const qrBuffer = Buffer.from(qrImage.replace(/^data:image\/png;base64,/, ""), "base64")
-        doc.image(qrBuffer, { fit: [150, 150], align: "center" })
-      } catch (e) {
-        logError("QR_GENERATION_FAILED", { requestId, error: (e as Error).message })
-      }
-
-      doc.end()
-
-      const pdfBuffer = await new Promise<Buffer>((resolve) => {
-        doc.on("end", () => resolve(Buffer.concat(chunks)))
-      })
-
-      const upload: any = await uploadTicket(pdfBuffer, booking.pnr)
-
-      if (!upload?.secure_url) {
-        throw new Error("Upload failed")
-      }
-
-      await db
-        .update(bookings)
-        .set({ ticketUrl: upload.secure_url, status: "TICKETED" })
-        .where(eq(bookings.id, bookingId))
-
-      logInfo("TICKET_GENERATION_SUCCESS", { requestId, bookingId, pnr: booking.pnr })
-
-      return NextResponse.json({ success: true, ticketUrl: upload.secure_url })
+      logInfo("TICKET_GENERATION_START", { requestId, bookingId })
+      const ticketUrl = await createTicket(bookingId)
+      return NextResponse.json({ success: true, ticketUrl })
     }
 
     return NextResponse.json({ error: "Invalid type", requestId }, { status: 400 })
