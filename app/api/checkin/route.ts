@@ -99,7 +99,10 @@ export async function POST(req: NextRequest) {
       pnr: booking.pnr,
       checkedInPassengers: matchedIds.length,
       checkedInAt: now.toISOString(),
-      message: "Check-in successful. Retrieve your boarding pass using the boarding pass endpoint."
+      boardingPassUrl: booking.ticketUrl ?? null,
+      message: booking.ticketUrl
+        ? "Check-in successful. Your boarding pass is ready."
+        : "Check-in successful. Retrieve your boarding pass using the boarding pass endpoint."
     })
   } catch (error: any) {
     logError("CHECKIN_FAILED", { requestId, error: error.message })
