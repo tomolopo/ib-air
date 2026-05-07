@@ -7,10 +7,10 @@ import { generateRequestId } from "@/lib/requestId"
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const requestId = generateRequestId()
-  const { id: bookingId } = params
+  const { id: bookingId } = await context.params
 
   try {
     const body = await req.json()

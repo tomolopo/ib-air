@@ -7,10 +7,10 @@ import { generateRequestId } from "@/lib/requestId"
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   const requestId = generateRequestId()
-  const { id } = params
+  const { id } = await context.params
 
   try {
     const booking = await db.query.bookings.findFirst({
