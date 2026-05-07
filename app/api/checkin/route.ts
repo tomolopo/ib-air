@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     if (!booking) {
       return NextResponse.json(
-        { error: "Booking not found. Please check your PNR.", requestId },
+        { error: "We could not find a booking matching that PNR and last name. Please check your details and try again.", requestId },
         { status: 404 }
       )
     }
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
 
     if (matched.length === 0) {
       return NextResponse.json(
-        { error: "Last name does not match any passenger on this booking.", requestId },
+        { error: "We could not find a booking matching that PNR and last name. Please check your details and try again.", requestId },
         { status: 403 }
       )
     }
