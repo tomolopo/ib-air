@@ -109,12 +109,26 @@ export default function SeatsPage() {
         return
       }
 
-      setMessage({ text: `Seat ${confirmData.seatAssigned} confirmed! Your ticket is being generated.`, success: true })
       setSelectedSeatId(null)
       loadSeats()
+
+      if (confirmData.ticketUrl) {
+        setMessage({
+          text: `Seat ${confirmData.seatAssigned} confirmed! Opening your boarding pass...`,
+          success: true
+        })
+        setTimeout(() => {
+          window.location.href = confirmData.ticketUrl
+        }, 1500)
+      } else {
+        setMessage({
+          text: `Seat ${confirmData.seatAssigned} confirmed! Your boarding pass is being generated — please refresh in a moment.`,
+          success: true
+        })
+        setConfirming(false)
+      }
     } catch {
       setMessage({ text: "Something went wrong. Please try again.", success: false })
-    } finally {
       setConfirming(false)
     }
   }
