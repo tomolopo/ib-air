@@ -1,10 +1,13 @@
 import type { NextConfig } from "next"
 
 const nextConfig: NextConfig = {
-  // Leave pdfkit as a runtime require instead of bundling it, so that its
-  // internal lookups for sibling assets (font metric .afm files in
-  // node_modules/pdfkit/js/data) resolve correctly on Vercel.
-  serverExternalPackages: ["pdfkit"],
+  // Leave pdfkit and sharp as runtime requires instead of bundling them.
+  // - pdfkit reads font metric .afm files from its own node_modules dir at
+  //   runtime, so it must not be bundled or those lookups break on Vercel.
+  // - sharp is a native module shipped with Next for image optimisation;
+  //   externalising it lets us use it to rasterise the SVG logo for the
+  //   boarding pass without webpack trying to bundle its native binary.
+  serverExternalPackages: ["pdfkit", "sharp"],
 
   // Belt-and-braces: also explicitly include the font data files in the
   // serverless function's file trace so they're present in the deployment.
