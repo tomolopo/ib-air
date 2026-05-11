@@ -69,7 +69,15 @@ export async function createTicket(bookingId: string): Promise<string> {
   doc.font("Helvetica")
 
   const chunks: Uint8Array[] = []
-  doc.on("data", chunk => chunks.push(chunk))
+
+  // Attach data/end/error listeners BEFORE writing content or calling doc.end().
+  // Otherwise "end" can fire before we attach the listener and the promise
+  // below hangs until the Vercel function times out.
+  const pdfBufferPromise = new Promise<Buffer>((resolve, reject) => {
+    doc.on("data", chunk => chunks.push(chunk))
+    doc.on("end", () => resolve(Buffer.concat(chunks)))
+    doc.on("error", err => reject(err))
+  })
 
   doc.fontSize(20).text(`${airline.name} BOARDING PASS`, { align: "center" })
   doc.moveDown()
@@ -111,9 +119,7 @@ export async function createTicket(bookingId: string): Promise<string> {
 
   doc.end()
 
-  const pdfBuffer = await new Promise<Buffer>((resolve) => {
-    doc.on("end", () => resolve(Buffer.concat(chunks)))
-  })
+  const pdfBuffer = await pdfBufferPromise
 
   const upload: any = await uploadTicket(pdfBuffer, booking.pnr)
 
