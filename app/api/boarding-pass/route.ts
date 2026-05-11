@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { bookings, passengers, bookingPassengers } from "@/db/schema"
 import { eq, inArray } from "drizzle-orm"
-import { logInfo, logError } from "@/lib/logger"
+import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
+import { createTicket } from "@/lib/createTicket"
 
 export async function GET(req: NextRequest) {
   const requestId = generateRequestId()
@@ -28,13 +29,6 @@ export async function GET(req: NextRequest) {
     if (!booking) {
       return NextResponse.json(
         { error: "We could not find a booking matching that PNR and last name. Please check your details and try again.", requestId },
-        { status: 404 }
-      )
-    }
-
-    if (!booking.ticketUrl) {
-      return NextResponse.json(
-        { error: "Boarding pass not available yet. Complete seat selection to generate your ticket.", requestId },
         { status: 404 }
       )
     }
@@ -66,6 +60,37 @@ export async function GET(req: NextRequest) {
       )
     }
 
+    // =========================
+    // SELF-HEAL MISSING TICKET
+    // If the booking is paid and at least one passenger has a seat assigned
+    // but the ticket was never generated (e.g. transient failure during seat
+    // confirm), generate it now on the fly.
+    // =========================
+    let ticketUrl: string | null = booking.ticketUrl ?? null
+    const hasSeatAssigned = pax.some(p => p.seat)
+
+    if (!ticketUrl && (booking.status === "PAID" || booking.status === "TICKETED") && hasSeatAssigned) {
+      logWarn("BOARDING_PASS_TICKET_MISSING_REGENERATING", { requestId, bookingId: booking.id, pnr })
+      try {
+        ticketUrl = await createTicket(booking.id)
+        logInfo("BOARDING_PASS_TICKET_REGENERATED", { requestId, bookingId: booking.id, pnr })
+      } catch (err: any) {
+        logError("BOARDING_PASS_TICKET_REGENERATION_FAILED", {
+          requestId,
+          bookingId: booking.id,
+          pnr,
+          error: err.message
+        })
+      }
+    }
+
+    if (!ticketUrl) {
+      return NextResponse.json(
+        { error: "Boarding pass not available yet. Complete seat selection to generate your ticket.", requestId },
+        { status: 404 }
+      )
+    }
+
     logInfo("BOARDING_PASS_FETCHED", { requestId, bookingId: booking.id, pnr })
 
     return NextResponse.json({
@@ -73,7 +98,7 @@ export async function GET(req: NextRequest) {
       bookingId: booking.id,
       pnr: booking.pnr,
       status: booking.status,
-      ticketUrl: booking.ticketUrl,
+      ticketUrl,
       passengers: pax.map(p => ({
         passengerId: p.id,
         firstName: p.firstName,
