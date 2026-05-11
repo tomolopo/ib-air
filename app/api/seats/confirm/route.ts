@@ -99,26 +99,37 @@ export async function POST(req: NextRequest) {
 
     // =========================
     // GENERATE TICKET
+    // The seat is already confirmed in the DB at this point — we do not
+    // roll that back if ticket generation fails. Instead we surface the
+    // error in the response so the caller can react (retry, show a clear
+    // message, etc.) rather than leaving the failure silent.
     // =========================
     let ticketUrl: string | null = null
+    let ticketError: string | null = null
 
     if (lock?.bookingId) {
       try {
         ticketUrl = await createTicket(lock.bookingId)
         logInfo("TICKET_GENERATED", { requestId, bookingId: lock.bookingId, ticketUrl })
       } catch (err: any) {
+        ticketError = err.message || "Ticket generation failed"
         logError("TICKET_GENERATION_FAILED", {
           requestId,
           bookingId: lock.bookingId,
-          error: err.message
+          error: ticketError
         })
       }
+    } else {
+      ticketError = "No booking associated with this seat — ticket not generated"
+      logWarn("TICKET_GENERATION_SKIPPED_NO_BOOKING", { requestId, seatId })
     }
 
     return NextResponse.json({
       success: true,
       seatAssigned: seat.seatNumber,
-      ticketUrl
+      ticketUrl,
+      ticketGenerationFailed: ticketError !== null,
+      ticketError
     })
 
   } catch (error: any) {

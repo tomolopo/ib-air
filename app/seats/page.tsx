@@ -120,6 +120,12 @@ export default function SeatsPage() {
         setTimeout(() => {
           window.location.href = confirmData.ticketUrl
         }, 1500)
+      } else if (confirmData.ticketGenerationFailed) {
+        setMessage({
+          text: `Seat ${confirmData.seatAssigned} confirmed, but we couldn't generate your boarding pass right now. You can retrieve it later during online check-in.`,
+          success: true
+        })
+        setConfirming(false)
       } else {
         setMessage({
           text: `Seat ${confirmData.seatAssigned} confirmed! Your boarding pass is being generated — please refresh in a moment.`,

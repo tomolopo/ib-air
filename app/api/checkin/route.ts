@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
 import { bookings, passengers, bookingPassengers } from "@/db/schema"
 import { eq, inArray, ilike } from "drizzle-orm"
-import { logInfo, logError } from "@/lib/logger"
+import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
+import { createTicket } from "@/lib/createTicket"
 
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
@@ -93,14 +94,36 @@ export async function POST(req: NextRequest) {
 
     logInfo("CHECKIN_COMPLETED", { requestId, bookingId: booking.id, pnr, count: matchedIds.length })
 
+    // =========================
+    // SELF-HEAL MISSING TICKET
+    // If the booking is paid but the ticket was never generated
+    // (e.g. transient failure during seat confirm), generate it now.
+    // =========================
+    let boardingPassUrl: string | null = booking.ticketUrl ?? null
+
+    if (!boardingPassUrl && (booking.status === "PAID" || booking.status === "TICKETED")) {
+      logWarn("CHECKIN_TICKET_MISSING_REGENERATING", { requestId, bookingId: booking.id, pnr })
+      try {
+        boardingPassUrl = await createTicket(booking.id)
+        logInfo("CHECKIN_TICKET_REGENERATED", { requestId, bookingId: booking.id, pnr })
+      } catch (err: any) {
+        logError("CHECKIN_TICKET_REGENERATION_FAILED", {
+          requestId,
+          bookingId: booking.id,
+          pnr,
+          error: err.message
+        })
+      }
+    }
+
     return NextResponse.json({
       success: true,
       bookingId: booking.id,
       pnr: booking.pnr,
       checkedInPassengers: matchedIds.length,
       checkedInAt: now.toISOString(),
-      boardingPassUrl: booking.ticketUrl ?? null,
-      message: booking.ticketUrl
+      boardingPassUrl,
+      message: boardingPassUrl
         ? "Check-in successful. Your boarding pass is ready."
         : "Check-in successful. Retrieve your boarding pass using the boarding pass endpoint."
     })
