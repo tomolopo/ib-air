@@ -55,7 +55,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    const { flights: flightIds, passengers: pax, sessionId } = body
+    const { flights: flightIds, passengers: pax, sessionId, cabinClass: rawCabinClass } = body
+
+    // Normalise cabinClass: accept "BUSINESS" or "ECONOMY" (case-insensitive),
+    // default to ECONOMY when missing/unknown.
+    const cabinClass = (typeof rawCabinClass === "string" && rawCabinClass.toUpperCase() === "BUSINESS")
+      ? "BUSINESS"
+      : "ECONOMY"
 
     logInfo("BOOKING_REQUEST", {
       requestId,
@@ -64,7 +70,8 @@ export async function POST(req: NextRequest) {
       sessionIdPresent: Boolean(sessionId),
       // Log the actual sessionId so we can compare it later against the
       // sessionId loaded from the booking row in /api/seats/confirm.
-      sessionId: sessionId || null
+      sessionId: sessionId || null,
+      cabinClass
     })
 
     // =========================
@@ -97,9 +104,14 @@ export async function POST(req: NextRequest) {
     const pnr = await generateUniquePNR()
 
     // =========================
-    // SIMPLE PRICING
+    // CLASS-BASED PRICING
+    // Per flight leg, per passenger:
+    //   ECONOMY  → ₦500
+    //   BUSINESS → ₦1,000
+    // Total = legs × passengers × per-pax price.
     // =========================
-    const totalAmount = resolvedFlightIds.length * 500
+    const pricePerPaxPerLeg = cabinClass === "BUSINESS" ? 1000 : 500
+    const totalAmount = resolvedFlightIds.length * pax.length * pricePerPaxPerLeg
 
     // =========================
     // CREATE BOOKING
@@ -112,7 +124,8 @@ export async function POST(req: NextRequest) {
         paymentStatus: "PENDING",
         totalAmount,
         passengerName: `${pax[0].firstName} ${pax[0].lastName}`,
-        sessionId: sessionId || null
+        sessionId: sessionId || null,
+        cabinClass
       })
       .returning()
 
@@ -167,6 +180,7 @@ export async function POST(req: NextRequest) {
       totalAmount,
       flightsCount: resolvedFlightIds.length,
       passengersCount: pax.length,
+      cabinClass,
       paymentUrl
     }
 

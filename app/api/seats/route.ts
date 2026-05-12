@@ -84,10 +84,13 @@ export async function GET(req: NextRequest) {
 
     // =========================
     // MAP STATUS
+    // Include the seat's cabin class so the seat picker can grey out seats
+    // whose class doesn't match the booking's paid class.
     // =========================
     const result = allSeats.map(seat => ({
       id: seat.id,
       seatNumber: seat.seatNumber,
+      class: (seat.class || "economy").toLowerCase(),
       status: lockedSeatIds.includes(seat.id)
         ? "locked"
         : seat.isAvailable

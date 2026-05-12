@@ -142,6 +142,10 @@ export const bookings = pgTable("bookings", {
   // path-parameter webhook in Answers when the boarding pass is ready.
   // TEXT (unbounded) because session IDs vary wildly in length across tenants.
   sessionId: text("sessionid"),
+  // Cabin class — "BUSINESS" or "ECONOMY". Defaults to ECONOMY (matches the
+  // SQL DEFAULT). Used by seat-confirm to enforce that the chosen seat row
+  // matches the paid class, and by the booking flow to apply class pricing.
+  cabinClass: varchar("cabin_class", { length: 20 }).default("ECONOMY"),
   createdAt: timestamp("created_at").defaultNow()
 })
 

@@ -80,6 +80,55 @@ export async function POST(req: NextRequest) {
     }
 
     // =========================
+    // ENFORCE CABIN CLASS
+    // The seat's class must match the booking's paid cabin class.
+    // Look up the seat + lock + booking together so we can reject early
+    // (before atomic-claiming the seat) if classes mismatch.
+    // =========================
+    const seatRow = await db.query.seats.findFirst({
+      where: (s, { eq }) => eq(s.id, seatId)
+    })
+
+    if (!seatRow) {
+      return NextResponse.json(
+        { error: "Seat not found", requestId },
+        { status: 404 }
+      )
+    }
+
+    const seatClass = (seatRow.class || "economy").toLowerCase()
+
+    const preLock = await db
+      .select()
+      .from(seatLocks)
+      .where(eq(seatLocks.seatId, seatId))
+      .then(res => res[0])
+
+    if (preLock?.bookingId) {
+      const preBooking = await db.query.bookings.findFirst({
+        where: (b, { eq }) => eq(b.id, preLock.bookingId)
+      })
+      const paidClass = (preBooking?.cabinClass || "ECONOMY").toLowerCase()
+
+      if (paidClass !== seatClass) {
+        logWarn("SEAT_CLASS_MISMATCH", {
+          requestId,
+          seatId,
+          seatNumber: seatRow.seatNumber,
+          seatClass,
+          paidClass
+        })
+        return NextResponse.json(
+          {
+            error: `That seat is ${seatClass}, but your booking is ${paidClass}. Please pick a seat in the ${paidClass} cabin.`,
+            requestId
+          },
+          { status: 409 }
+        )
+      }
+    }
+
+    // =========================
     // ATOMIC UPDATE (CORE FIX)
     // =========================
     const updatedSeats = await db

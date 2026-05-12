@@ -7,11 +7,13 @@ const RIGHT_COLS = ["D", "E", "F"]
 const BUSINESS_ROWS = [1, 2, 3, 4, 5]
 
 type SeatStatus = "available" | "locked" | "booked"
+type CabinClass = "business" | "economy"
 
 type Seat = {
   id: string
   seatNumber: string
   status: SeatStatus
+  class: CabinClass
 }
 
 type Passenger = {
@@ -26,6 +28,9 @@ const STATUS_COLORS: Record<string, string> = {
   locked: "#f97316",
   booked: "#ef4444",
   selected: "#3b82f6",
+  // Out-of-class: rendered for seats whose class doesn't match the booking's
+  // paid cabin class. Visually dim grey so it reads as "unavailable to you".
+  outOfClass: "#cbd5e1",
 }
 
 export default function SeatsPage() {
@@ -35,6 +40,9 @@ export default function SeatsPage() {
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [message, setMessage] = useState<{ text: string; success: boolean } | null>(null)
+  // Cabin class the traveler paid for. We default to "economy" until the
+  // booking row loads — most permissive default keeps the picker usable.
+  const [paidClass, setPaidClass] = useState<CabinClass>("economy")
 
   const params = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search)
@@ -52,6 +60,16 @@ export default function SeatsPage() {
         const pax = data.passengers || []
         setPassengers(pax)
         setSelectedPassenger(pax[0]?.id || "")
+      })
+    // Fetch the booking itself to learn which cabin class was paid for.
+    fetch(`/api/booking/${bookingId}`)
+      .then(res => res.json())
+      .then(data => {
+        const cls = (data?.booking?.cabinClass || "ECONOMY").toLowerCase() as CabinClass
+        setPaidClass(cls === "business" ? "business" : "economy")
+      })
+      .catch(() => {
+        // leave paidClass as default ("economy")
       })
   }, [flightId, bookingId])
 
@@ -75,6 +93,14 @@ export default function SeatsPage() {
 
   function handleSeatClick(seat: Seat) {
     if (seat.status !== "available") return
+    // Block clicks on seats whose class doesn't match what the traveler paid for.
+    if (seat.class !== paidClass) {
+      setMessage({
+        text: `That seat is ${seat.class}. Your booking is ${paidClass} — please pick a seat in the ${paidClass} cabin.`,
+        success: false
+      })
+      return
+    }
     setMessage(null)
     setSelectedSeatId(prev => prev === seat.id ? null : seat.id)
   }
@@ -157,6 +183,10 @@ export default function SeatsPage() {
 
   function getSeatColor(seat: Seat) {
     if (seat.id === selectedSeatId) return STATUS_COLORS.selected
+    // Seats outside the paid cabin class render in a dim grey, regardless of
+    // whether they're available, locked, or booked — they're simply not an
+    // option for this booking.
+    if (seat.class !== paidClass) return STATUS_COLORS.outOfClass
     return STATUS_COLORS[seat.status] ?? "#6b7280"
   }
 
@@ -166,13 +196,19 @@ export default function SeatsPage() {
 
     const isSelected = seat.id === selectedSeatId
     const isBusiness = BUSINESS_ROWS.includes(row)
+    const isOutOfClass = seat.class !== paidClass
+    const isDisabled = seat.status !== "available" || isOutOfClass
+
+    const title = isOutOfClass
+      ? `${seat.seatNumber} — ${seat.class} (not included in your ${paidClass} booking)`
+      : `${seat.seatNumber} — ${seat.status}`
 
     return (
       <button
         key={col}
         onClick={() => handleSeatClick(seat)}
-        disabled={seat.status !== "available"}
-        title={`${seat.seatNumber} — ${seat.status}`}
+        disabled={isDisabled}
+        title={title}
         style={{
           width: isBusiness ? 48 : 42,
           height: isBusiness ? 44 : 38,
@@ -182,8 +218,8 @@ export default function SeatsPage() {
           color: "white",
           fontSize: 10,
           fontWeight: 700,
-          cursor: seat.status === "available" ? "pointer" : "not-allowed",
-          opacity: seat.status === "booked" ? 0.7 : 1,
+          cursor: isDisabled ? "not-allowed" : "pointer",
+          opacity: isOutOfClass ? 0.55 : seat.status === "booked" ? 0.7 : 1,
           transition: "transform 0.1s, box-shadow 0.1s",
           boxShadow: isSelected ? "0 0 0 3px rgba(59,130,246,0.3)" : "0 1px 3px rgba(0,0,0,0.15)",
         }}
@@ -199,7 +235,13 @@ export default function SeatsPage() {
       {/* Header */}
       <div style={{ textAlign: "center", marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#1e293b" }}>Select Your Seat</h2>
-        <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>Tap an available seat, then confirm</p>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>
+          Tap an available seat in your{" "}
+          <span style={{ fontWeight: 700, color: paidClass === "business" ? "#7c3aed" : "#2563eb" }}>
+            {paidClass}
+          </span>{" "}
+          cabin, then confirm.
+        </p>
       </div>
 
       {/* Passenger selector */}
@@ -315,6 +357,10 @@ export default function SeatsPage() {
           { color: STATUS_COLORS.locked, label: "Locked" },
           { color: STATUS_COLORS.booked, label: "Taken" },
           { color: STATUS_COLORS.selected, label: "Selected" },
+          {
+            color: STATUS_COLORS.outOfClass,
+            label: paidClass === "business" ? "Economy (not included)" : "Business (not included)"
+          },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <div style={{ width: 13, height: 13, borderRadius: 3, background: color }} />
