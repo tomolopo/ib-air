@@ -61,7 +61,10 @@ export async function POST(req: NextRequest) {
       requestId,
       flightsCount: flightIds?.length,
       passengersCount: pax?.length,
-      sessionIdPresent: Boolean(sessionId)
+      sessionIdPresent: Boolean(sessionId),
+      // Log the actual sessionId so we can compare it later against the
+      // sessionId loaded from the booking row in /api/seats/confirm.
+      sessionId: sessionId || null
     })
 
     // =========================
@@ -170,7 +173,10 @@ export async function POST(req: NextRequest) {
     logInfo("BOOKING_SUCCESS", {
       requestId,
       bookingId: booking.id,
-      pnr
+      pnr,
+      // Log the sessionId that got persisted on the row so we can later
+      // cross-reference against the one used in the webhook callback.
+      sessionId: booking.sessionId
     })
 
     return NextResponse.json(response)

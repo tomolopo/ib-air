@@ -185,6 +185,17 @@ export async function POST(req: NextRequest) {
           where: (b, { eq }) => eq(b.id, lock.bookingId)
         })
 
+        // Log what we loaded from the booking row before firing the webhook
+        // so we can correlate the sessionId used in the callback with the
+        // sessionId originally captured at booking creation time.
+        logInfo("ANSWERS_WEBHOOK_LOOKUP", {
+          requestId,
+          bookingId: lock.bookingId,
+          pnr: bookingRow?.pnr ?? null,
+          sessionIdOnBooking: bookingRow?.sessionId ?? null,
+          createdAt: bookingRow?.createdAt ?? null
+        })
+
         if (bookingRow?.sessionId) {
           await notifyAnswersBoardingPassReady({
             requestId,
