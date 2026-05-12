@@ -55,12 +55,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    const { flights: flightIds, passengers: pax } = body
+    const { flights: flightIds, passengers: pax, sessionId } = body
 
     logInfo("BOOKING_REQUEST", {
       requestId,
       flightsCount: flightIds?.length,
-      passengersCount: pax?.length
+      passengersCount: pax?.length,
+      sessionIdPresent: Boolean(sessionId)
     })
 
     // =========================
@@ -107,7 +108,8 @@ export async function POST(req: NextRequest) {
         status: "PENDING",
         paymentStatus: "PENDING",
         totalAmount,
-        passengerName: `${pax[0].firstName} ${pax[0].lastName}`
+        passengerName: `${pax[0].firstName} ${pax[0].lastName}`,
+        sessionId: sessionId || null
       })
       .returning()
 

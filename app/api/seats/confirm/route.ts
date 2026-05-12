@@ -6,6 +6,58 @@ import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 import { createTicket } from "@/lib/createTicket"
 
+const ANSWERS_WEBHOOK_BASE =
+  process.env.ANSWERS_WEBHOOK_BASE || "https://api2.infobip.com/bots/webhook"
+
+// Fire-and-forget ping to the Infobip Answers path-parameter webhook so the
+// paused chat flow resumes and renders the boarding pass via document_url.
+// Non-fatal: if Answers is unreachable, the seat is still confirmed and the
+// ticket is still generated — the traveler can retrieve it manually later.
+async function notifyAnswersBoardingPassReady(opts: {
+  requestId: string
+  sessionId: string
+  pnr: string | null
+  ticketUrl: string
+  passengerName: string | null
+}) {
+  const { requestId, sessionId, pnr, ticketUrl, passengerName } = opts
+
+  const payload = {
+    pnr: pnr || "",
+    ticketUrl,
+    passengerName: passengerName || ""
+  }
+
+  const url = `${ANSWERS_WEBHOOK_BASE}/${encodeURIComponent(sessionId)}`
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+
+    if (!res.ok) {
+      logWarn("ANSWERS_WEBHOOK_NON_OK", {
+        requestId,
+        sessionId,
+        pnr,
+        status: res.status
+      })
+      return
+    }
+
+    logInfo("ANSWERS_WEBHOOK_SENT", { requestId, sessionId, pnr })
+  } catch (err: any) {
+    logError("ANSWERS_WEBHOOK_FAILED", {
+      requestId,
+      sessionId,
+      pnr,
+      error: err.message
+    })
+  }
+}
+
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
   const startTime = Date.now()
@@ -118,6 +170,34 @@ export async function POST(req: NextRequest) {
           bookingId: lock.bookingId,
           error: ticketError
         })
+      }
+
+      // =========================
+      // PUSH BOARDING PASS BACK TO ANSWERS (proactive completion)
+      // Fire only when ticket generation succeeded AND the booking carries
+      // an Answers chat sessionId. Non-fatal: failure here doesn't change
+      // the seat-confirm response.
+      // =========================
+      if (ticketUrl) {
+        const bookingRow = await db.query.bookings.findFirst({
+          where: (b, { eq }) => eq(b.id, lock.bookingId)
+        })
+
+        if (bookingRow?.sessionId) {
+          // Fire-and-forget: do not await, do not block the response
+          notifyAnswersBoardingPassReady({
+            requestId,
+            sessionId: bookingRow.sessionId,
+            pnr: bookingRow.pnr,
+            ticketUrl,
+            passengerName: bookingRow.passengerName
+          })
+        } else {
+          logWarn("ANSWERS_WEBHOOK_SKIPPED_NO_SESSION", {
+            requestId,
+            bookingId: lock.bookingId
+          })
+        }
       }
     } else {
       ticketError = "No booking associated with this seat — ticket not generated"

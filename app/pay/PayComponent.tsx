@@ -116,7 +116,7 @@ export default function PayComponent() {
   })
 
   const amount = booking.totalAmount ?? 0
-  const formattedAmount = `$${amount.toLocaleString()}`
+  const formattedAmount = `₦${amount.toLocaleString()}`
 
   if (!bookingId) {
     return (
@@ -195,7 +195,7 @@ export default function PayComponent() {
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 24, fontWeight: 800 }}>{formattedAmount}</div>
-                      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>USD</div>
+                      <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>NGN</div>
                     </div>
                   </div>
                   {booking.pnr && (
