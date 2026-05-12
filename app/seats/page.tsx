@@ -113,26 +113,28 @@ export default function SeatsPage() {
       loadSeats()
 
       if (confirmData.ticketUrl) {
+        // Open the boarding pass in a new tab first so the user can view, save,
+        // or print it. Calling window.open synchronously here (within the click
+        // handler's async chain) keeps most browsers' popup blockers happy.
+        window.open(confirmData.ticketUrl, "_blank", "noopener,noreferrer")
+
         const chatReturnUrl = process.env.NEXT_PUBLIC_CHATBOT_RETURN_URL
         if (chatReturnUrl) {
-          // Return the traveler to the chat — the boarding pass arrives there
-          // automatically via the Answers webhook fired from /api/seats/confirm.
           setMessage({
-            text: `Seat ${confirmData.seatAssigned} confirmed! Taking you back to the chat — your boarding pass will be waiting there.`,
+            text: `Seat ${confirmData.seatAssigned} confirmed! Your boarding pass is opening in a new tab — you'll be returned to the chat shortly.`,
             success: true
           })
           setTimeout(() => {
             window.location.href = chatReturnUrl
-          }, 1500)
+          }, 3000)
         } else {
-          // No chat return URL configured — fall back to opening the PDF directly.
+          // No chat return URL configured — leave the user on the seat page
+          // with the boarding pass open in the other tab.
           setMessage({
-            text: `Seat ${confirmData.seatAssigned} confirmed! Opening your boarding pass...`,
+            text: `Seat ${confirmData.seatAssigned} confirmed! Your boarding pass has opened in a new tab.`,
             success: true
           })
-          setTimeout(() => {
-            window.location.href = confirmData.ticketUrl
-          }, 1500)
+          setConfirming(false)
         }
       } else if (confirmData.ticketGenerationFailed) {
         setMessage({
