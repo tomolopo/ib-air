@@ -175,8 +175,10 @@ export async function POST(req: NextRequest) {
       // =========================
       // PUSH BOARDING PASS BACK TO ANSWERS (proactive completion)
       // Fire only when ticket generation succeeded AND the booking carries
-      // an Answers chat sessionId. Non-fatal: failure here doesn't change
-      // the seat-confirm response.
+      // an Answers chat sessionId. Non-fatal — the helper has its own
+      // try/catch and won't throw — but we MUST await it on Vercel
+      // serverless: any pending promise after the response is returned
+      // gets killed before completing the fetch (and before its logs flush).
       // =========================
       if (ticketUrl) {
         const bookingRow = await db.query.bookings.findFirst({
@@ -184,8 +186,7 @@ export async function POST(req: NextRequest) {
         })
 
         if (bookingRow?.sessionId) {
-          // Fire-and-forget: do not await, do not block the response
-          notifyAnswersBoardingPassReady({
+          await notifyAnswersBoardingPassReady({
             requestId,
             sessionId: bookingRow.sessionId,
             pnr: bookingRow.pnr,
