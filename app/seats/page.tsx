@@ -113,13 +113,27 @@ export default function SeatsPage() {
       loadSeats()
 
       if (confirmData.ticketUrl) {
-        setMessage({
-          text: `Seat ${confirmData.seatAssigned} confirmed! Opening your boarding pass...`,
-          success: true
-        })
-        setTimeout(() => {
-          window.location.href = confirmData.ticketUrl
-        }, 1500)
+        const chatReturnUrl = process.env.NEXT_PUBLIC_CHATBOT_RETURN_URL
+        if (chatReturnUrl) {
+          // Return the traveler to the chat — the boarding pass arrives there
+          // automatically via the Answers webhook fired from /api/seats/confirm.
+          setMessage({
+            text: `Seat ${confirmData.seatAssigned} confirmed! Taking you back to the chat — your boarding pass will be waiting there.`,
+            success: true
+          })
+          setTimeout(() => {
+            window.location.href = chatReturnUrl
+          }, 1500)
+        } else {
+          // No chat return URL configured — fall back to opening the PDF directly.
+          setMessage({
+            text: `Seat ${confirmData.seatAssigned} confirmed! Opening your boarding pass...`,
+            success: true
+          })
+          setTimeout(() => {
+            window.location.href = confirmData.ticketUrl
+          }, 1500)
+        }
       } else if (confirmData.ticketGenerationFailed) {
         setMessage({
           text: `Seat ${confirmData.seatAssigned} confirmed, but we couldn't generate your boarding pass right now. You can retrieve it later during online check-in.`,
