@@ -140,7 +140,8 @@ export const bookings = pgTable("bookings", {
   ticketUrl: text("ticket_url"),
   // Answers chat session id — set on booking creation; used to ping the
   // path-parameter webhook in Answers when the boarding pass is ready.
-  sessionId: varchar("sessionid", { length: 128 }),
+  // TEXT (unbounded) because session IDs vary wildly in length across tenants.
+  sessionId: text("sessionid"),
   createdAt: timestamp("created_at").defaultNow()
 })
 
