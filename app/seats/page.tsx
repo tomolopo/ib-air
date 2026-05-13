@@ -138,6 +138,31 @@ export default function SeatsPage() {
       setSelectedSeatId(null)
       loadSeats()
 
+      // Multi-passenger gate: backend tells us whether every traveler on
+      // this booking now has a seat. If not, advance to the next unseated
+      // passenger and skip the boarding-pass / chat-return logic.
+      if (confirmData.allPassengersSeated === false) {
+        const remaining = confirmData.remainingPax
+        setMessage({
+          text: `Seat ${confirmData.seatAssigned} confirmed. ${remaining} more passenger${remaining === 1 ? "" : "s"} to seat — please pick a seat for the next one.`,
+          success: true
+        })
+
+        // Refresh passengers so the dropdown reflects the new .seat value
+        // and auto-select the next traveler without a seat.
+        fetch(`/api/booking/passengers?bookingId=${bookingId}`)
+          .then(res => res.json())
+          .then(data => {
+            const updated: Passenger[] = data.passengers || []
+            setPassengers(updated)
+            const nextUnseated = updated.find(p => !p.seat)
+            if (nextUnseated) setSelectedPassenger(nextUnseated.id)
+          })
+
+        setConfirming(false)
+        return
+      }
+
       if (confirmData.ticketUrl) {
         // Open the boarding pass in a new tab first so the user can view, save,
         // or print it. Calling window.open synchronously here (within the click

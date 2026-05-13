@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/db"
-import { passengers, seats, seatLocks } from "@/db/schema"
-import { eq, and } from "drizzle-orm"
+import { passengers, seats, seatLocks, bookingPassengers } from "@/db/schema"
+import { eq, and, inArray } from "drizzle-orm"
 import { logInfo, logError, logWarn } from "@/lib/logger"
 import { generateRequestId } from "@/lib/requestId"
 import { createTicket } from "@/lib/createTicket"
@@ -209,6 +209,45 @@ export async function POST(req: NextRequest) {
     let ticketError: string | null = null
 
     if (lock?.bookingId) {
+      // Gate ticket generation on ALL passengers having a seat. For
+      // multi-pax bookings we don't want to fire the boarding pass + chat
+      // return on the first confirm — only when every traveler is seated.
+      const links = await db
+        .select()
+        .from(bookingPassengers)
+        .where(eq(bookingPassengers.bookingId, lock.bookingId))
+
+      const passengerIds = links.map(l => l.passengerId)
+      const pax = passengerIds.length > 0
+        ? await db.select().from(passengers).where(inArray(passengers.id, passengerIds))
+        : []
+
+      const totalPax = pax.length
+      const seatedPax = pax.filter(p => p.seat && p.seat.trim() !== "").length
+      const allSeated = totalPax > 0 && seatedPax === totalPax
+
+      logInfo("SEAT_CONFIRM_PROGRESS", {
+        requestId,
+        bookingId: lock.bookingId,
+        seatedPax,
+        totalPax,
+        allSeated
+      })
+
+      if (!allSeated) {
+        return NextResponse.json({
+          success: true,
+          seatAssigned: seat.seatNumber,
+          ticketUrl: null,
+          ticketGenerationFailed: false,
+          ticketError: null,
+          allPassengersSeated: false,
+          seatedPax,
+          totalPax,
+          remainingPax: totalPax - seatedPax
+        })
+      }
+
       try {
         ticketUrl = await createTicket(lock.bookingId)
         logInfo("TICKET_GENERATED", { requestId, bookingId: lock.bookingId, ticketUrl })
@@ -270,7 +309,8 @@ export async function POST(req: NextRequest) {
       seatAssigned: seat.seatNumber,
       ticketUrl,
       ticketGenerationFailed: ticketError !== null,
-      ticketError
+      ticketError,
+      allPassengersSeated: true
     })
 
   } catch (error: any) {
