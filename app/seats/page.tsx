@@ -21,6 +21,7 @@ type Passenger = {
   firstName: string
   lastName: string
   seat: string | null
+  cabinClass: string | null
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -40,9 +41,6 @@ export default function SeatsPage() {
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [message, setMessage] = useState<{ text: string; success: boolean } | null>(null)
-  // Cabin class the traveler paid for. We default to "economy" until the
-  // booking row loads — most permissive default keeps the picker usable.
-  const [paidClass, setPaidClass] = useState<CabinClass>("economy")
 
   const params = typeof window !== "undefined"
     ? new URLSearchParams(window.location.search)
@@ -61,17 +59,14 @@ export default function SeatsPage() {
         setPassengers(pax)
         setSelectedPassenger(pax[0]?.id || "")
       })
-    // Fetch the booking itself to learn which cabin class was paid for.
-    fetch(`/api/booking/${bookingId}`)
-      .then(res => res.json())
-      .then(data => {
-        const cls = (data?.booking?.cabinClass || "ECONOMY").toLowerCase() as CabinClass
-        setPaidClass(cls === "business" ? "business" : "economy")
-      })
-      .catch(() => {
-        // leave paidClass as default ("economy")
-      })
   }, [flightId, bookingId])
+
+  // Derive paidClass from whichever passenger is currently selected.
+  // Updates automatically when the user switches passengers in the dropdown.
+  const paidClass: CabinClass = (() => {
+    const cls = passengers.find(p => p.id === selectedPassenger)?.cabinClass || "economy"
+    return cls.toLowerCase() === "business" ? "business" : "economy"
+  })()
 
   function loadSeats() {
     fetch(`/api/seats?flightId=${flightId}`)

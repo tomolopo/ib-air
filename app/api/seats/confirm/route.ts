@@ -98,34 +98,30 @@ export async function POST(req: NextRequest) {
 
     const seatClass = (seatRow.class || "economy").toLowerCase()
 
-    const preLock = await db
-      .select()
-      .from(seatLocks)
-      .where(eq(seatLocks.seatId, seatId))
-      .then(res => res[0])
+    // Check the PASSENGER's own cabin class (not the booking's), so that
+    // passengers on the same booking in different classes each get the
+    // correct seat cabin enforced individually.
+    const passengerRow = await db.query.passengers.findFirst({
+      where: (p, { eq }) => eq(p.id, passengerId)
+    })
+    const paidClass = (passengerRow?.cabinClass || "ECONOMY").toLowerCase()
 
-    if (preLock?.bookingId) {
-      const preBooking = await db.query.bookings.findFirst({
-        where: (b, { eq }) => eq(b.id, preLock.bookingId)
+    if (paidClass !== seatClass && paidClass !== "mixed") {
+      logWarn("SEAT_CLASS_MISMATCH", {
+        requestId,
+        passengerId,
+        seatId,
+        seatNumber: seatRow.seatNumber,
+        seatClass,
+        paidClass
       })
-      const paidClass = (preBooking?.cabinClass || "ECONOMY").toLowerCase()
-
-      if (paidClass !== seatClass) {
-        logWarn("SEAT_CLASS_MISMATCH", {
-          requestId,
-          seatId,
-          seatNumber: seatRow.seatNumber,
-          seatClass,
-          paidClass
-        })
-        return NextResponse.json(
-          {
-            error: `That seat is ${seatClass}, but your booking is ${paidClass}. Please pick a seat in the ${paidClass} cabin.`,
-            requestId
-          },
-          { status: 409 }
-        )
-      }
+      return NextResponse.json(
+        {
+          error: `That seat is ${seatClass}, but this passenger's booking is ${paidClass}. Please pick a seat in the ${paidClass} cabin.`,
+          requestId
+        },
+        { status: 409 }
+      )
     }
 
     // =========================

@@ -55,23 +55,14 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
 
-    const { flights: flightIds, passengers: pax, sessionId, cabinClass: rawCabinClass } = body
-
-    // Normalise cabinClass: accept "BUSINESS" or "ECONOMY" (case-insensitive),
-    // default to ECONOMY when missing/unknown.
-    const cabinClass = (typeof rawCabinClass === "string" && rawCabinClass.toUpperCase() === "BUSINESS")
-      ? "BUSINESS"
-      : "ECONOMY"
+    const { flights: flightIds, passengers: pax, sessionId } = body
 
     logInfo("BOOKING_REQUEST", {
       requestId,
       flightsCount: flightIds?.length,
       passengersCount: pax?.length,
       sessionIdPresent: Boolean(sessionId),
-      // Log the actual sessionId so we can compare it later against the
-      // sessionId loaded from the booking row in /api/seats/confirm.
-      sessionId: sessionId || null,
-      cabinClass
+      sessionId: sessionId || null
     })
 
     // =========================
@@ -104,14 +95,22 @@ export async function POST(req: NextRequest) {
     const pnr = await generateUniquePNR()
 
     // =========================
-    // CLASS-BASED PRICING
-    // Per flight leg, per passenger:
-    //   ECONOMY  → ₦500
-    //   BUSINESS → ₦1,000
-    // Total = legs × passengers × per-pax price.
+    // PER-PASSENGER CLASS-BASED PRICING
+    // Each passenger carries their own cabinClass (defaults to ECONOMY).
+    //   ECONOMY  → ₦500 per leg
+    //   BUSINESS → ₦1,000 per leg
+    // Total = sum over passengers of (legs × pricePerLeg(passengerClass))
     // =========================
-    const pricePerPaxPerLeg = cabinClass === "BUSINESS" ? 1000 : 500
-    const totalAmount = resolvedFlightIds.length * pax.length * pricePerPaxPerLeg
+    const normClass = (raw: any) =>
+      typeof raw === "string" && raw.toUpperCase() === "BUSINESS" ? "BUSINESS" : "ECONOMY"
+
+    const totalAmount = resolvedFlightIds.length * pax.reduce((sum: number, p: any) => {
+      return sum + (normClass(p.cabinClass) === "BUSINESS" ? 1000 : 500)
+    }, 0)
+
+    // Booking-level cabinClass: single value if uniform, "MIXED" otherwise.
+    const classSet = new Set<string>(pax.map((p: any) => normClass(p.cabinClass)))
+    const bookingCabinClass: string = classSet.size === 1 ? [...classSet][0] : "MIXED"
 
     // =========================
     // CREATE BOOKING
@@ -125,7 +124,7 @@ export async function POST(req: NextRequest) {
         totalAmount,
         passengerName: `${pax[0].firstName} ${pax[0].lastName}`,
         sessionId: sessionId || null,
-        cabinClass
+        cabinClass: bookingCabinClass
       })
       .returning()
 
@@ -141,7 +140,7 @@ export async function POST(req: NextRequest) {
     await db.insert(bookingSegments).values(segments)
 
     // =========================
-    // INSERT PASSENGERS (FIXED)
+    // INSERT PASSENGERS
     // =========================
     const insertedPassengers = await db
       .insert(passengers)
@@ -153,13 +152,14 @@ export async function POST(req: NextRequest) {
           phone: p.phone,
           type: p.type || "adult",
           passportNumber: p.passportNumber || null,
-          nationality: p.nationality || null
+          nationality: p.nationality || null,
+          cabinClass: normClass(p.cabinClass)
         }))
       )
       .returning()
 
     // =========================
-    // LINK PASSENGERS TO BOOKING (NEW FIX)
+    // LINK PASSENGERS TO BOOKING
     // =========================
     await db.insert(bookingPassengers).values(
       insertedPassengers.map((p) => ({
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       totalAmount,
       flightsCount: resolvedFlightIds.length,
       passengersCount: pax.length,
-      cabinClass,
+      cabinClass: bookingCabinClass,
       paymentUrl
     }
 
